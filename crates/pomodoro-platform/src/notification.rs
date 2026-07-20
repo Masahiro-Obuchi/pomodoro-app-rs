@@ -2,17 +2,17 @@ use std::{error::Error, fmt, io, process::Command};
 
 use pomodoro_core::SessionKind;
 
-/// Linuxの`notify-send`を利用するデスクトップ通知。
+/// Desktop notifications delivered through Linux `notify-send`.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NotifySendNotifier;
 
 impl NotifySendNotifier {
-    /// セッション完了をデスクトップへ通知する。
+    /// Sends a desktop notification for a completed session.
     ///
     /// # Errors
     ///
-    /// `notify-send`を起動できない、またはコマンドが失敗した場合に
-    /// [`NotificationError`]を返す。
+    /// Returns [`NotificationError`] if `notify-send` cannot be launched or exits
+    /// unsuccessfully.
     pub fn session_completed(self, completed: SessionKind) -> Result<(), NotificationError> {
         let (summary, body) = match completed {
             SessionKind::Focus => ("集中タイム完了", "休憩しましょう。"),

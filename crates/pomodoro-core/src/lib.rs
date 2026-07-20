@@ -1,4 +1,4 @@
-//! UIやOSに依存しないポモドーロタイマーの中核ロジック。
+//! UI- and operating-system-independent Pomodoro timer logic.
 
 mod config;
 mod history;

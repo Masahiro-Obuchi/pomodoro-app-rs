@@ -6,14 +6,14 @@ use crate::{SessionKind, TimerEvent};
 
 pub const CURRENT_HISTORY_SCHEMA_VERSION: u32 = 1;
 
-/// 1日分の軽量な実績。
+/// A lightweight summary for one local calendar day.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DailySummary {
     pub completed_focus_sessions: u32,
     pub focused_seconds: u64,
 }
 
-/// `YYYY-MM-DD`をキーに持つ、バージョン付きの日次履歴。
+/// Versioned daily history keyed by dates in `YYYY-MM-DD` format.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct History {
     schema_version: u32,
@@ -41,14 +41,15 @@ impl History {
         self.days.get(local_date)
     }
 
-    /// 集中完了イベントだけを日次履歴へ反映する。
+    /// Records only completed focus-session events in the daily history.
     ///
-    /// 記録した場合は`true`、休憩完了やスキップを無視した場合は`false`を返す。
+    /// Returns `true` when the event was recorded and `false` when a completed break
+    /// or skipped session was ignored.
     ///
     /// # Errors
     ///
-    /// 日付が`YYYY-MM-DD`形式でない場合、または集計値がオーバーフローする場合に
-    /// [`HistoryError`]を返す。
+    /// Returns [`HistoryError`] if the date is not in `YYYY-MM-DD` format or if an
+    /// aggregate value would overflow.
     pub fn record_event(
         &mut self,
         local_date: &str,
@@ -67,12 +68,12 @@ impl History {
         Ok(true)
     }
 
-    /// 集中セッションの完了を日次履歴へ直接加算する。
+    /// Adds a completed focus session directly to the daily history.
     ///
     /// # Errors
     ///
-    /// 日付が`YYYY-MM-DD`形式でない場合、または集計値がオーバーフローする場合に
-    /// [`HistoryError`]を返す。
+    /// Returns [`HistoryError`] if the date is not in `YYYY-MM-DD` format or if an
+    /// aggregate value would overflow.
     pub fn record_focus(
         &mut self,
         local_date: &str,
@@ -99,12 +100,12 @@ impl History {
         Ok(())
     }
 
-    /// 保存データを読み込んだ直後に呼び、対応形式か確認する。
+    /// Validates deserialized history before it is used.
     ///
     /// # Errors
     ///
-    /// スキーマバージョンに対応していない場合、または日付キーが不正な場合に
-    /// [`HistoryError`]を返す。
+    /// Returns [`HistoryError`] if the schema version is unsupported or a date key is
+    /// invalid.
     pub fn validate(&self) -> Result<(), HistoryError> {
         if self.schema_version != CURRENT_HISTORY_SCHEMA_VERSION {
             return Err(HistoryError::UnsupportedSchemaVersion {

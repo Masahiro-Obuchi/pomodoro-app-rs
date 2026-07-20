@@ -6,7 +6,7 @@ use crate::SessionKind;
 
 const MAX_SESSION_SECONDS: u64 = 24 * 60 * 60;
 
-/// 各セッションの長さと、長休憩に入るまでの集中回数。
+/// Session durations and the number of focus sessions before a long break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimerConfig {
     focus_seconds: u64,
@@ -16,12 +16,12 @@ pub struct TimerConfig {
 }
 
 impl TimerConfig {
-    /// 検証済みの設定を作る。
+    /// Creates a validated timer configuration.
     ///
     /// # Errors
     ///
-    /// セッション時間が0秒または24時間を超える場合、および長休憩までの
-    /// 集中回数が0の場合に[`ConfigError`]を返す。
+    /// Returns [`ConfigError`] if a session duration is zero or longer than 24 hours,
+    /// or if the number of focus sessions before a long break is zero.
     pub fn new(
         focus_seconds: u64,
         short_break_seconds: u64,
@@ -38,12 +38,12 @@ impl TimerConfig {
         Ok(config)
     }
 
-    /// デシリアライズした設定も含め、値が利用可能か検証する。
+    /// Validates the values, including configurations produced by deserialization.
     ///
     /// # Errors
     ///
-    /// セッション時間または長休憩までの集中回数が許容範囲外の場合に
-    /// [`ConfigError`]を返す。
+    /// Returns [`ConfigError`] if a session duration or the number of focus sessions
+    /// before a long break is outside the supported range.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_duration("focus_seconds", self.focus_seconds)?;
         validate_duration("short_break_seconds", self.short_break_seconds)?;

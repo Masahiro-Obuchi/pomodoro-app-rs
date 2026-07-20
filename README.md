@@ -1,29 +1,56 @@
-# pomodoro-app-rs
+# Pomodoro App in Rust
 
-Rustの学習を兼ねて開発するポモドーロタイマーです。
+A Pomodoro timer for Linux, built as a hands-on Rust learning project.
 
-最初にRatatuiを使ったLinux向けTUIを作り、その後egui/eframeを使ってLinuxネイティブ版とWebAssembly版を追加します。タイマーの状態遷移は、UIから独立した`pomodoro-core`に集約します。
+The project currently provides a terminal user interface built with Ratatui. The timer state machine lives in the UI-independent `pomodoro-core` crate so it can later be reused by an egui/eframe application targeting both native Linux and WebAssembly.
 
-詳しい仕様とマイルストーンは[`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)を参照してください。
+> [!NOTE]
+> The current TUI text and desktop notifications are in Japanese. Internationalization can be added without changing the core timer logic.
 
-## TUIを実行する
+## Current features
+
+- 25-minute focus sessions, 5-minute short breaks, and 15-minute long breaks
+- Long break after every four completed focus sessions
+- Start, pause, resume, reset, and skip controls
+- Deadline-based timing that remains accurate after delayed redraws or system sleep
+- Persistent timer state and lightweight daily history
+- Linux desktop notifications through `notify-send`
+- Platform-independent timer logic with deterministic unit tests
+
+See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for the architecture, accepted specifications, and roadmap.
+
+## Requirements
+
+- Rust 1.86 or later
+- A terminal supported by Crossterm
+- `notify-send` for Linux desktop notifications (optional)
+
+## Run the TUI
 
 ```bash
 cargo run -p pomodoro-tui
 ```
 
-`Space`で開始・一時停止・再開、`r`でリセット、`n`で次のセッションへ進み、`q`で状態を保存して終了します。Linux通知には`notify-send`を利用し、利用できない場合もタイマーと履歴は動作します。
+### Controls
 
-状態と履歴はXDG state directory配下の`pomodoro-app-rs/state.json`へ保存します。
+| Key | Action |
+| --- | --- |
+| `Space` | Start, pause, or resume |
+| `r` | Reset the current session |
+| `n` | Skip to the next session |
+| `?` | Toggle help |
+| `q` | Save and quit |
 
-## 開発用コマンド
+Timer state and history are stored in `pomodoro-app-rs/state.json` under the user's XDG state directory.
+
+## Development
 
 ```bash
-cargo fmt --check
+cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-## ライセンス
+## License
 
-[MIT License](LICENSE)
+Licensed under the [MIT License](LICENSE).

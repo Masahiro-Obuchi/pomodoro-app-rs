@@ -1,4 +1,4 @@
-//! ネイティブ環境向けの時刻、保存、通知アダプター。
+//! Time, persistence, and notification adapters for native environments.
 
 mod notification;
 mod storage;
