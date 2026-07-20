@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = [
+    "apps/pomodoro-tui",
+    "crates/pomodoro-core",
+    "crates/pomodoro-platform",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.86"
+version = "0.1.0"
+
+[workspace.dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+chrono = "0.4.44"
+crossterm = "0.29.0"
+directories = "6.0.0"
+ratatui = "0.30.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

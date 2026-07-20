@@ -1,0 +1,15 @@
+[package]
+name = "pomodoro-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+pomodoro-core = { path = "../../crates/pomodoro-core" }
+pomodoro-platform = { path = "../../crates/pomodoro-platform" }
+ratatui.workspace = true
+
+[lints]
+workspace = true
