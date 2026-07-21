@@ -27,6 +27,7 @@ pub enum Action {
     Start,
     Pause,
     Resume,
+    Reconfigure,
 }
 
 /// An event emitted by the core for frontend consumers.
@@ -173,6 +174,32 @@ impl PomodoroTimer {
 
         self.state = TimerState::Running {
             deadline_ms: deadline(now_ms, remaining_ms)?,
+        };
+        Ok(())
+    }
+
+    /// Replaces the configuration while the timer is idle.
+    ///
+    /// The current session is reset to its full duration and progress within the
+    /// current round is cleared.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TimerError`] if the configuration is invalid or the timer is running
+    /// or paused.
+    pub fn reconfigure(&mut self, config: TimerConfig) -> Result<(), TimerError> {
+        config.validate()?;
+        if self.status() != TimerStatus::Idle {
+            return Err(TimerError::InvalidTransition {
+                action: Action::Reconfigure,
+                status: self.status(),
+            });
+        }
+
+        self.config = config;
+        self.completed_focuses_in_round = 0;
+        self.state = TimerState::Idle {
+            remaining_ms: self.config.duration_millis(self.session),
         };
         Ok(())
     }
@@ -456,6 +483,39 @@ mod tests {
         let original = timer.clone();
 
         assert_eq!(timer.start(u64::MAX), Err(TimerError::TimestampOverflow));
+        assert_eq!(timer, original);
+    }
+
+    #[test]
+    fn reconfigure_resets_the_current_session_and_round_progress() {
+        let mut timer = PomodoroTimer::new(short_config()).unwrap();
+        timer.start(0).unwrap();
+        timer.tick(10_000).unwrap();
+        assert_eq!(timer.session(), SessionKind::ShortBreak);
+        assert_eq!(timer.completed_focuses_in_round(), 1);
+
+        let new_config = TimerConfig::new(60, 30, 90, 3).unwrap();
+        timer.reconfigure(new_config).unwrap();
+
+        assert_eq!(timer.config(), &new_config);
+        assert_eq!(timer.session(), SessionKind::ShortBreak);
+        assert_eq!(timer.remaining_seconds(10_000), 30);
+        assert_eq!(timer.completed_focuses_in_round(), 0);
+    }
+
+    #[test]
+    fn reconfigure_rejects_a_non_idle_timer_without_mutating_it() {
+        let mut timer = PomodoroTimer::new(short_config()).unwrap();
+        timer.start(0).unwrap();
+        let original = timer.clone();
+
+        assert_eq!(
+            timer.reconfigure(TimerConfig::default()),
+            Err(TimerError::InvalidTransition {
+                action: Action::Reconfigure,
+                status: TimerStatus::Running,
+            })
+        );
         assert_eq!(timer, original);
     }
 

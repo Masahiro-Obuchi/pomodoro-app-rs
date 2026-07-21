@@ -12,6 +12,7 @@ The project currently provides a terminal user interface built with Ratatui. The
 - 25-minute focus sessions, 5-minute short breaks, and 15-minute long breaks
 - Long break after every four completed focus sessions
 - Start, pause, resume, reset, and skip controls
+- In-app editing for session durations and the number of focus sessions per round
 - Deadline-based timing that remains accurate after delayed redraws or system sleep
 - Persistent timer state and lightweight daily history
 - Linux desktop notifications through `notify-send`
@@ -38,6 +39,7 @@ cargo run -p pomodoro-tui
 | `Space` | Start, pause, or resume |
 | `r` | Reset the current session |
 | `n` | Skip to the next session |
+| `s` | Open settings while the timer is idle |
 | `?` | Toggle help |
 | `q` | Save and quit |
 
