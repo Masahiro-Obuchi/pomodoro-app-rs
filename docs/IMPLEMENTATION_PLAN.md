@@ -1,52 +1,51 @@
-# Pomodoro App 実装計画
+# Pomodoro App Implementation Plan
 
-## 実装状況
+## Implementation status
 
-- [x] M1: プロジェクト基盤とコア
-- [ ] M2: TUI（基本画面、操作、保存、通知まで実装済み。設定画面は未実装）
-- [ ] M3: Linux GUI
-- [ ] M4: WASM GUI
-- [ ] M5: 配布と拡張
+- [x] M1: Project foundation and core library
+- [ ] M2: TUI (basic screen, controls, persistence, and notifications are implemented; settings screen remains)
+- [ ] M3: Native Linux GUI
+- [ ] M4: WebAssembly GUI
+- [ ] M5: Packaging and extensions
 
-## 1. 目的
+## 1. Purpose
 
-Rustの学習を兼ねて、Linuxで日常利用できるポモドーロタイマーを作る。
-最初にTUIを完成させ、その後、同じ中核ロジックを利用するGUIをLinuxネイティブとWebAssembly向けに提供する。
+Build a Pomodoro timer suitable for daily use on Linux while learning Rust through a practical project. Complete the TUI first, then provide native Linux and WebAssembly GUIs that reuse the same core timer logic.
 
-## 2. 採用方針
+## 2. Technical direction
 
-- タイマーの状態遷移はUIやOSから独立した`pomodoro-core`に置く。
-- 最初のフロントエンドはRatatuiを使ったTUIとする。
-- GUIはegui/eframeを使い、Linuxネイティブ版とWASM版で画面コードを共有する。
-- GTK 4対応は低優先度の将来候補とし、MVPには含めない。
-- 時刻、保存、通知は環境ごとの差をアダプターで吸収する。
-- 各段階で`cargo fmt`、`cargo clippy`、`cargo test`を通す。
+- Keep timer state transitions in `pomodoro-core`, independent of the UI and operating system.
+- Use Ratatui for the first frontend.
+- Use egui/eframe to share GUI code between native Linux and WebAssembly.
+- Keep GTK 4 as a low-priority future frontend and outside the MVP.
+- Isolate platform-specific time, persistence, and notification behavior behind adapters.
+- Run `cargo fmt`, `cargo clippy`, and `cargo test` at every milestone.
 
-## 3. MVP仕様
+## 3. MVP specification
 
-### 3.1 タイマー
+### 3.1 Timer
 
-| 項目 | 初期値 |
+| Setting | Default |
 | --- | ---: |
-| 集中 | 25分 |
-| 短休憩 | 5分 |
-| 長休憩 | 15分 |
-| 長休憩までの集中回数 | 4回 |
+| Focus session | 25 minutes |
+| Short break | 5 minutes |
+| Long break | 15 minutes |
+| Focus sessions before a long break | 4 |
 
-提供する操作は開始、一時停止、再開、リセット、次へスキップとする。
+The timer supports starting, pausing, resuming, resetting, and skipping to the next session.
 
-- 集中完了後は短休憩へ進み、4回目の集中完了後は長休憩へ進む。
-- セッション終了時は通知するが、次のセッションは自動開始しない。
-- 正常完了した集中セッションだけを実績に加算する。
-- スキップ、リセット、途中終了は実績に加算しない。
-- 一時停止中の時間は経過時間に含めない。
-- PCのスリープ中もタイマーは進む。復帰時に終了予定時刻を過ぎていれば完了させる。
-- 実行中状態を保存し、アプリ再起動やWebページ再読み込み後に復元する。
-- アプリやWebページが完全に閉じている間の通知は保証しない。
+- A completed focus session is followed by a short break, except that every fourth completed focus is followed by a long break.
+- Completing a session sends a notification but does not automatically start the next session.
+- Only naturally completed focus sessions count toward history.
+- Skipped, reset, and interrupted sessions do not count toward history.
+- Time spent paused does not count toward the session duration.
+- The timer continues across system sleep. If its deadline has passed when the system resumes, the session completes at that point.
+- Running state is persisted and restored after an application restart or web page reload.
+- Notifications are not guaranteed while the native application or web page is completely closed.
 
-### 3.2 履歴
+### 3.2 History
 
-MVPでは日次集計だけを記録する。
+The MVP stores daily aggregates only.
 
 ```json
 {
@@ -60,22 +59,22 @@ MVPでは日次集計だけを記録する。
 }
 ```
 
-- 日付はセッション終了予定時刻のローカル日付とする。
-- 正常完了した集中セッションについて、回数と設定されていた集中時間を加算する。
-- ネイティブ版とWeb版で同じ論理形式を使う。
-- 将来の形式変更に備えて`schema_version`を持たせる。
-- 詳細なイベント履歴は、日次集計とは別の保存領域として追加する。
+- Use the local date corresponding to the scheduled completion time.
+- For each naturally completed focus session, increment the count and add its configured duration.
+- Use the same logical data format on native and web targets.
+- Include `schema_version` to support future migrations.
+- Add detailed event history in a separate storage area without changing the daily aggregate format.
 
-### 3.3 通知と保存
+### 3.3 Notifications and persistence
 
-- Linuxネイティブ版はデスクトップ通知を利用する。
-- Web版はユーザーが許可した場合にNotifications APIを利用する。
-- 通知できない環境では画面上の表示をフォールバックとする。
-- LinuxではXDG Base Directoryに従って設定、状態、履歴を保存する。
-- Webではブラウザのローカルストレージを利用する。
-- ネイティブ版のファイル更新は一時ファイルからの置換で行い、途中終了による破損を避ける。
+- Use desktop notifications on native Linux.
+- Use the Notifications API on the web after the user grants permission.
+- Fall back to an in-app message where system notifications are unavailable.
+- Follow the XDG Base Directory specification for native settings, state, and history.
+- Use browser local storage on the web.
+- Write native state through a temporary file and replace the destination to reduce corruption from interrupted writes.
 
-## 4. アーキテクチャ
+## 4. Architecture
 
 ```text
 pomodoro-app-rs/
@@ -99,121 +98,122 @@ pomodoro-app-rs/
 
 ### 4.1 `pomodoro-core`
 
-OS、UI、ファイルシステム、非同期ランタイムに依存しないライブラリとする。
+This crate is independent of the operating system, UI toolkit, filesystem, and asynchronous runtime.
 
-- `TimerConfig`: セッション時間と長休憩までの回数
-- `SessionKind`: 集中、短休憩、長休憩
-- `TimerState`: 待機中、実行中、一時停止中
-- `PomodoroTimer`: 状態遷移と完了回数
-- `TimerEvent`: セッション完了など、UIや通知層へ渡すイベント
-- `History`: バージョン付きの日次集計
+- `TimerConfig`: session durations and focus count before a long break
+- `SessionKind`: focus, short break, or long break
+- `TimerState`: idle, running, or paused, including persisted timing data
+- `PomodoroTimer`: state transitions and completed focus count
+- `TimerEvent`: events passed to UI, history, and notification layers
+- `History`: versioned daily aggregates
 
-現在時刻はフロントエンドからUnix時刻のミリ秒として渡す。実行中は残り時間を1秒ずつ減らさず、終了予定時刻との差から計算する。これにより描画遅延、バックグラウンドタブ、スリープ復帰でのずれを防ぐ。
+The frontend supplies the current Unix time in milliseconds. A running timer calculates its remaining time from a stored deadline instead of decrementing a counter every second. This prevents drift after delayed redraws, background-tab throttling, or system sleep.
 
 ### 4.2 `pomodoro-platform`
 
-保存と通知のインターフェース、およびネイティブ実装を担当する。WASM固有処理は必要に応じてGUIクレート側の`wasm32`条件付きモジュールに置く。
+This crate provides native time, persistence, and notification adapters. WebAssembly-specific implementations can live in conditionally compiled `wasm32` modules in the GUI crate when needed.
 
 ### 4.3 `pomodoro-tui`
 
-Ratatuiで次を表示する。
+The Ratatui frontend displays:
 
-- 現在のセッション種別
-- 残り時間
-- 実行状態
-- 現在のラウンド進捗
-- 当日の完了回数と合計集中時間
-- キー操作のヘルプ
+- Current session kind
+- Remaining time
+- Timer status
+- Progress within the current round
+- Today's completed focus count and total focus time
+- Keyboard help
 
-初期キー割り当ては次のとおりとする。
+Initial key bindings:
 
-| キー | 操作 |
+| Key | Action |
 | --- | --- |
-| `Space` | 開始、一時停止、再開 |
-| `r` | リセット |
-| `n` | 次へスキップ |
-| `s` | 設定 |
-| `?` | ヘルプ |
-| `q` | 終了 |
+| `Space` | Start, pause, or resume |
+| `r` | Reset |
+| `n` | Skip to the next session |
+| `s` | Open settings |
+| `?` | Toggle help |
+| `q` | Save and quit |
 
 ### 4.4 `pomodoro-gui`
 
-egui/eframeでLinuxとWASMの画面を共有する。保存、通知、現在時刻の取得だけをターゲット別に実装する。Web版ではタブ復帰時と再読み込み時に現在時刻から状態を再計算する。
+Share the main screen between native Linux and WebAssembly with egui/eframe. Implement persistence, notifications, and current-time access separately for each target. On the web, recompute state when the tab becomes visible and after a page reload.
 
-## 5. 実装マイルストーン
+## 5. Milestones
 
-### M1: プロジェクト基盤とコア
+### M1: Project foundation and core
 
-- Cargo workspaceを作成する。
-- 設定、状態、イベント、履歴の型を作成する。
-- 開始、一時停止、再開、リセット、スキップ、時間経過を実装する。
-- 時刻を引数で制御する単体テストを作成する。
+- Create the Cargo workspace.
+- Define configuration, state, event, and history types.
+- Implement start, pause, resume, reset, skip, and time advancement.
+- Add deterministic tests that supply timestamps directly.
 
-完了条件:
+Completion criteria:
 
-- 実時間を待たずに全状態遷移をテストできる。
-- 4回目の集中後に長休憩へ進む。
-- スリープ相当の大きな時刻差でも一度だけ完了イベントが発生する。
-- 履歴をJSONへ直列化・復元できる。
+- All transitions can be tested without waiting for real time.
+- The fourth completed focus session transitions to a long break.
+- A large time jump emits exactly one completion event.
+- History can be serialized to and restored from JSON.
 
 ### M2: TUI
 
-- イベントループと画面を実装する。
-- キー操作を実装する。
-- 設定、状態、履歴を保存する。
-- Linux通知を実装する。
+- Implement the event loop and screen.
+- Implement keyboard controls and settings.
+- Persist configuration, timer state, and history.
+- Send Linux desktop notifications.
 
-完了条件:
+Completion criteria:
 
-- 短いテスト設定で集中から休憩まで操作できる。
-- ターミナルを壊さず正常終了できる。
-- 再起動後に状態と履歴を復元できる。
+- A short test configuration can complete a focus-and-break sequence.
+- The application restores the terminal correctly when it exits.
+- Timer state and history survive a restart.
 
-### M3: Linux GUI
+### M3: Native Linux GUI
 
-- egui/eframeの画面を実装する。
-- コア、保存、通知をTUIと共有する。
-- `.desktop`ファイルとアイコンを用意する。
+- Implement the egui/eframe screen.
+- Reuse the core, persistence, and notification layers from the TUI.
+- Add a `.desktop` file and application icon.
 
-完了条件:
+Completion criteria:
 
-- TUIと同じ状態遷移、設定、履歴を利用できる。
-- Linuxデスクトップから起動して通知を受け取れる。
+- The GUI uses the same transitions, settings, and history as the TUI.
+- It can be launched from the Linux desktop and send notifications.
 
-### M4: WASM GUI
+### M4: WebAssembly GUI
 
-- `wasm32-unknown-unknown`向けビルドを追加する。
-- ブラウザ保存、通知権限、表示復帰処理を実装する。
-- 静的ホスティング用の成果物を生成する。
+- Add a `wasm32-unknown-unknown` build.
+- Implement browser persistence, notification permission handling, and visibility restoration.
+- Generate artifacts suitable for static hosting.
 
-完了条件:
+Completion criteria:
 
-- Linux GUIと同じ画面・状態遷移がブラウザで動作する。
-- バックグラウンドタブから戻った際に残り時間が補正される。
-- ページ再読み込み後に進行状態と履歴を復元できる。
+- The native GUI screen and transitions work in a browser.
+- Remaining time is corrected after returning from a background tab.
+- Running state and history survive a page reload.
 
-### M5: 配布と拡張
+### M5: Packaging and extensions
 
-- PWA化、オフライン起動、インストール手順を整える。
-- Linuxパッケージング方法を選定する。
-- 詳細履歴、統計、効果音、自動開始などを必要に応じて追加する。
-- GTK 4フロントエンドの優先度を再評価する。
+- Add PWA support, offline startup, and installation instructions.
+- Select and implement a Linux packaging format.
+- Add detailed history, statistics, sound, and automatic transitions as needed.
+- Reassess the priority of a GTK 4 frontend.
+- Add internationalization for UI text and notifications.
 
-## 6. 品質方針
+## 6. Quality policy
 
-- `cargo fmt --check`
+- `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
-- コアのテストでは実際の待機やスレッドスリープを使わない。
-- 不正な設定値、時刻のオーバーフロー、不正な状態遷移をエラーとして扱う。
-- UI層にはタイマーの業務ルールを重複実装しない。
+- Core tests must not sleep or wait for real time.
+- Invalid configuration, timestamp overflow, and invalid transitions must return errors.
+- UI layers must not duplicate timer business rules.
 
-## 7. 主なリスクと対策
+## 7. Risks and mitigations
 
-| リスク | 対策 |
+| Risk | Mitigation |
 | --- | --- |
-| ブラウザがバックグラウンドタイマーを間引く | 終了予定時刻との差で再計算する |
-| ページやプロセス終了中に通知できない | 復帰時に完了を反映し、制約を明記する |
-| GUIとTUIで挙動がずれる | すべての状態遷移を`pomodoro-core`に集約する |
-| 保存形式の変更で既存データが読めなくなる | スキーマバージョンと移行処理を用意する |
-| 最初から対象を広げすぎる | コア、TUI、Linux GUI、WASMの順に完成させる |
+| Browsers throttle background timers | Recompute remaining time from the stored deadline |
+| Closed pages and processes cannot notify reliably | Apply completion on restoration and document the limitation |
+| TUI and GUI behavior diverges | Keep all state transitions in `pomodoro-core` |
+| Future formats cannot read existing data | Version stored data and provide migrations |
+| Too many targets delay a usable result | Complete the core, TUI, native GUI, and WebAssembly target in that order |

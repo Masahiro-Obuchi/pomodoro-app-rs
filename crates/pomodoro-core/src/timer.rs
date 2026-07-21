@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ConfigError, SessionKind, TimerConfig};
 
-/// 永続化できるタイマー内部状態。
+/// Persistable internal timer state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "status")]
 pub enum TimerState {
@@ -13,7 +13,7 @@ pub enum TimerState {
     Paused { remaining_ms: u64 },
 }
 
-/// 表示や入力判定に使う、内部時刻を含まない状態区分。
+/// Timer status without internal timing data, suitable for display and input handling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerStatus {
     Idle,
@@ -21,7 +21,7 @@ pub enum TimerStatus {
     Paused,
 }
 
-/// 不正な状態遷移のエラー表示に使う操作名。
+/// An action name used when reporting an invalid state transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Start,
@@ -29,7 +29,7 @@ pub enum Action {
     Resume,
 }
 
-/// コアからフロントエンドへ通知するイベント。
+/// An event emitted by the core for frontend consumers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum TimerEvent {
@@ -43,7 +43,7 @@ pub enum TimerEvent {
     },
 }
 
-/// UIから独立したポモドーロ状態機械。
+/// A UI-independent Pomodoro state machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PomodoroTimer {
     config: TimerConfig,
@@ -53,11 +53,12 @@ pub struct PomodoroTimer {
 }
 
 impl PomodoroTimer {
-    /// 検証済み設定から、集中セッションの待機状態を作る。
+    /// Creates an idle focus session from a validated configuration.
     ///
     /// # Errors
     ///
-    /// 設定値が許容範囲外の場合に[`TimerError::InvalidConfig`]を返す。
+    /// Returns [`TimerError::InvalidConfig`] if a configuration value is outside the
+    /// supported range.
     pub fn new(config: TimerConfig) -> Result<Self, TimerError> {
         config.validate()?;
         Ok(Self {
@@ -99,7 +100,7 @@ impl PomodoroTimer {
         self.completed_focuses_in_round
     }
 
-    /// 現在時刻における残り時間をミリ秒で返す。
+    /// Returns the remaining time in milliseconds at `now_ms`.
     #[must_use]
     pub const fn remaining_millis(&self, now_ms: u64) -> u64 {
         match self.state {
@@ -108,18 +109,18 @@ impl PomodoroTimer {
         }
     }
 
-    /// 画面表示向けに、端数を切り上げた残り秒数を返す。
+    /// Returns the remaining whole seconds, rounded up for display.
     #[must_use]
     pub const fn remaining_seconds(&self, now_ms: u64) -> u64 {
         self.remaining_millis(now_ms).div_ceil(1_000)
     }
 
-    /// 待機中のセッションを開始する。
+    /// Starts an idle session.
     ///
     /// # Errors
     ///
-    /// 待機中でない場合、または終了予定時刻の計算がオーバーフローする場合に
-    /// [`TimerError`]を返す。
+    /// Returns [`TimerError`] if the timer is not idle or if calculating the deadline
+    /// would overflow.
     pub fn start(&mut self, now_ms: u64) -> Result<(), TimerError> {
         let TimerState::Idle { remaining_ms } = self.state else {
             return Err(TimerError::InvalidTransition {
@@ -134,12 +135,12 @@ impl PomodoroTimer {
         Ok(())
     }
 
-    /// 実行中のセッションを一時停止する。
+    /// Pauses a running session.
     ///
     /// # Errors
     ///
-    /// 実行中でない場合、またはすでに終了予定時刻を過ぎている場合に
-    /// [`TimerError`]を返す。
+    /// Returns [`TimerError`] if the timer is not running or the deadline has already
+    /// elapsed.
     pub fn pause(&mut self, now_ms: u64) -> Result<(), TimerError> {
         let TimerState::Running { deadline_ms } = self.state else {
             return Err(TimerError::InvalidTransition {
@@ -156,12 +157,12 @@ impl PomodoroTimer {
         Ok(())
     }
 
-    /// 一時停止中のセッションを再開する。
+    /// Resumes a paused session.
     ///
     /// # Errors
     ///
-    /// 一時停止中でない場合、または終了予定時刻の計算がオーバーフローする場合に
-    /// [`TimerError`]を返す。
+    /// Returns [`TimerError`] if the timer is not paused or if calculating the new
+    /// deadline would overflow.
     pub fn resume(&mut self, now_ms: u64) -> Result<(), TimerError> {
         let TimerState::Paused { remaining_ms } = self.state else {
             return Err(TimerError::InvalidTransition {
@@ -176,21 +177,21 @@ impl PomodoroTimer {
         Ok(())
     }
 
-    /// 現在セッションを初期時間に戻し、待機状態にする。
+    /// Restores the current session's full duration and returns it to idle.
     pub fn reset(&mut self) {
         self.state = TimerState::Idle {
             remaining_ms: self.config.duration_millis(self.session),
         };
     }
 
-    /// 現在セッションを実績に加えず、次のセッションへ移る。
+    /// Advances without counting the current session toward history.
     pub fn skip(&mut self) -> TimerEvent {
         let skipped = self.session;
         self.advance_session(false);
         TimerEvent::SessionSkipped { session: skipped }
     }
 
-    /// 現在時刻を反映し、終了予定時刻を過ぎていれば一度だけ完了させる。
+    /// Applies the current time and completes an elapsed session exactly once.
     pub fn tick(&mut self, now_ms: u64) -> Option<TimerEvent> {
         let TimerState::Running { deadline_ms } = self.state else {
             return None;
@@ -210,11 +211,12 @@ impl PomodoroTimer {
         })
     }
 
-    /// デシリアライズした状態が現在の設定と整合するか検証する。
+    /// Validates that deserialized state is consistent with its configuration.
     ///
     /// # Errors
     ///
-    /// 設定、ラウンド内完了回数、または残り時間が不正な場合に[`TimerError`]を返す。
+    /// Returns [`TimerError`] if the configuration, completed focus count, or remaining
+    /// time is invalid.
     pub fn validate(&self) -> Result<(), TimerError> {
         self.config.validate()?;
         if self.completed_focuses_in_round > self.config.focuses_before_long_break() {

@@ -2,12 +2,12 @@ use std::{error::Error, fmt, time::SystemTime};
 
 use chrono::{DateTime, Local, Utc};
 
-/// 現在のUnix時刻をミリ秒で返す。
+/// Returns the current Unix timestamp in milliseconds.
 ///
 /// # Errors
 ///
-/// システム時刻がUnix epochより前、または`u64`の範囲を超える場合に
-/// [`TimeError`]を返す。
+/// Returns [`TimeError`] if the system clock is before the Unix epoch or the timestamp
+/// does not fit in a `u64`.
 pub fn unix_time_millis() -> Result<u64, TimeError> {
     let millis = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -16,11 +16,11 @@ pub fn unix_time_millis() -> Result<u64, TimeError> {
     u64::try_from(millis).map_err(|_| TimeError::OutOfRange)
 }
 
-/// Unix時刻を、その環境のローカル日付`YYYY-MM-DD`へ変換する。
+/// Converts a Unix timestamp to the environment's local date in `YYYY-MM-DD` format.
 ///
 /// # Errors
 ///
-/// 指定時刻を`chrono`が表現できない場合に[`TimeError::OutOfRange`]を返す。
+/// Returns [`TimeError::OutOfRange`] if `chrono` cannot represent the timestamp.
 pub fn local_date_at(timestamp_ms: u64) -> Result<String, TimeError> {
     let timestamp = i64::try_from(timestamp_ms).map_err(|_| TimeError::OutOfRange)?;
     let utc = DateTime::<Utc>::from_timestamp_millis(timestamp).ok_or(TimeError::OutOfRange)?;

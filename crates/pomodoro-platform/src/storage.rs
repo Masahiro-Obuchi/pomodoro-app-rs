@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 const APPLICATION_DIRECTORY: &str = "pomodoro-app-rs";
 const STATE_FILE: &str = "state.json";
 
-/// タイマーと日次履歴をまとめた永続化単位。
+/// A persistence unit containing timer state and daily history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersistedState {
     pub timer: PomodoroTimer,
@@ -19,11 +19,11 @@ pub struct PersistedState {
 }
 
 impl PersistedState {
-    /// 初期設定から空の状態を作る。
+    /// Creates empty persisted state from an initial configuration.
     ///
     /// # Errors
     ///
-    /// 設定値が不正な場合に[`StorageError::InvalidTimer`]を返す。
+    /// Returns [`StorageError::InvalidTimer`] if the configuration is invalid.
     pub fn new(config: TimerConfig) -> Result<Self, StorageError> {
         Ok(Self {
             timer: PomodoroTimer::new(config).map_err(StorageError::InvalidTimer)?,
@@ -31,11 +31,12 @@ impl PersistedState {
         })
     }
 
-    /// デシリアライズ後のタイマーと履歴を検証する。
+    /// Validates the timer and history after deserialization.
     ///
     /// # Errors
     ///
-    /// タイマーまたは履歴が現在の形式と整合しない場合に[`StorageError`]を返す。
+    /// Returns [`StorageError`] if the timer or history is inconsistent with the
+    /// current format.
     pub fn validate(&self) -> Result<(), StorageError> {
         self.timer.validate().map_err(StorageError::InvalidTimer)?;
         self.history
@@ -44,18 +45,19 @@ impl PersistedState {
     }
 }
 
-/// XDG state directoryへJSONを保存するネイティブ実装。
+/// Native JSON storage under the XDG state directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeStorage {
     state_path: PathBuf,
 }
 
 impl NativeStorage {
-    /// 現在ユーザーのXDGディレクトリから保存先を決定する。
+    /// Resolves the storage path from the current user's XDG directories.
     ///
     /// # Errors
     ///
-    /// ホームディレクトリを特定できない場合に[`StorageError::NoBaseDirectory`]を返す。
+    /// Returns [`StorageError::NoBaseDirectory`] if a user base directory cannot be
+    /// determined.
     pub fn discover() -> Result<Self, StorageError> {
         let base_dirs = BaseDirs::new().ok_or(StorageError::NoBaseDirectory)?;
         let base = base_dirs
@@ -74,12 +76,12 @@ impl NativeStorage {
         &self.state_path
     }
 
-    /// 状態を読み込む。ファイルが存在しない場合は`Ok(None)`を返す。
+    /// Loads persisted state, returning `Ok(None)` when the file does not exist.
     ///
     /// # Errors
     ///
-    /// ファイルを読み込めない、JSONが不正、または内容の検証に失敗した場合に
-    /// [`StorageError`]を返す。
+    /// Returns [`StorageError`] if the file cannot be read, the JSON is malformed, or
+    /// validation fails.
     pub fn load(&self) -> Result<Option<PersistedState>, StorageError> {
         let bytes = match fs::read(&self.state_path) {
             Ok(bytes) => bytes,
@@ -92,12 +94,12 @@ impl NativeStorage {
         Ok(Some(state))
     }
 
-    /// 同じディレクトリの一時ファイルへ書き込んでから置換する。
+    /// Writes to a temporary file in the same directory before replacing the state file.
     ///
     /// # Errors
     ///
-    /// ディレクトリ作成、JSON生成、書き込み、同期、置換のいずれかに失敗した場合に
-    /// [`StorageError`]を返す。
+    /// Returns [`StorageError`] if directory creation, JSON serialization, writing,
+    /// synchronization, or replacement fails.
     pub fn save(&self, state: &PersistedState) -> Result<(), StorageError> {
         state.validate()?;
         let parent = self
