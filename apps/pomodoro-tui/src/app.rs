@@ -1,12 +1,139 @@
 use crossterm::event::KeyCode;
-use pomodoro_core::{SessionKind, TimerError, TimerEvent, TimerStatus};
+use pomodoro_core::{SessionKind, TimerConfig, TimerError, TimerEvent, TimerStatus};
 use pomodoro_platform::{NativeStorage, NotifySendNotifier, PersistedState, local_date_at};
+
+const DURATION_STEP_SECONDS: u64 = 60;
+const MIN_DURATION_SECONDS: u64 = 60;
+const MAX_DURATION_SECONDS: u64 = 24 * 60 * 60;
+const MAX_FOCUSES_BEFORE_LONG_BREAK: u32 = 99;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsField {
+    FocusDuration,
+    ShortBreakDuration,
+    LongBreakDuration,
+    FocusesBeforeLongBreak,
+}
+
+impl SettingsField {
+    const fn next(self) -> Self {
+        match self {
+            Self::FocusDuration => Self::ShortBreakDuration,
+            Self::ShortBreakDuration => Self::LongBreakDuration,
+            Self::LongBreakDuration => Self::FocusesBeforeLongBreak,
+            Self::FocusesBeforeLongBreak => Self::FocusDuration,
+        }
+    }
+
+    const fn previous(self) -> Self {
+        match self {
+            Self::FocusDuration => Self::FocusesBeforeLongBreak,
+            Self::ShortBreakDuration => Self::FocusDuration,
+            Self::LongBreakDuration => Self::ShortBreakDuration,
+            Self::FocusesBeforeLongBreak => Self::LongBreakDuration,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsDraft {
+    focus_seconds: u64,
+    short_break_seconds: u64,
+    long_break_seconds: u64,
+    focuses_before_long_break: u32,
+    selected: SettingsField,
+}
+
+impl SettingsDraft {
+    fn from_config(config: &TimerConfig) -> Self {
+        Self {
+            focus_seconds: config.focus_seconds(),
+            short_break_seconds: config.short_break_seconds(),
+            long_break_seconds: config.long_break_seconds(),
+            focuses_before_long_break: config.focuses_before_long_break(),
+            selected: SettingsField::FocusDuration,
+        }
+    }
+
+    pub const fn selected(&self) -> SettingsField {
+        self.selected
+    }
+
+    pub const fn focus_seconds(&self) -> u64 {
+        self.focus_seconds
+    }
+
+    pub const fn short_break_seconds(&self) -> u64 {
+        self.short_break_seconds
+    }
+
+    pub const fn long_break_seconds(&self) -> u64 {
+        self.long_break_seconds
+    }
+
+    pub const fn focuses_before_long_break(&self) -> u32 {
+        self.focuses_before_long_break
+    }
+
+    fn select_next(&mut self) {
+        self.selected = self.selected.next();
+    }
+
+    fn select_previous(&mut self) {
+        self.selected = self.selected.previous();
+    }
+
+    fn adjust(&mut self, increase: bool) {
+        match self.selected {
+            SettingsField::FocusDuration => {
+                adjust_duration(&mut self.focus_seconds, increase);
+            }
+            SettingsField::ShortBreakDuration => {
+                adjust_duration(&mut self.short_break_seconds, increase);
+            }
+            SettingsField::LongBreakDuration => {
+                adjust_duration(&mut self.long_break_seconds, increase);
+            }
+            SettingsField::FocusesBeforeLongBreak => {
+                self.focuses_before_long_break = if increase {
+                    self.focuses_before_long_break
+                        .saturating_add(1)
+                        .min(MAX_FOCUSES_BEFORE_LONG_BREAK)
+                } else {
+                    self.focuses_before_long_break.saturating_sub(1).max(1)
+                };
+            }
+        }
+    }
+
+    fn build_config(&self) -> Result<TimerConfig, pomodoro_core::ConfigError> {
+        TimerConfig::new(
+            self.focus_seconds,
+            self.short_break_seconds,
+            self.long_break_seconds,
+            self.focuses_before_long_break,
+        )
+    }
+}
+
+fn adjust_duration(seconds: &mut u64, increase: bool) {
+    *seconds = if increase {
+        seconds
+            .saturating_add(DURATION_STEP_SECONDS)
+            .min(MAX_DURATION_SECONDS)
+    } else {
+        seconds
+            .saturating_sub(DURATION_STEP_SECONDS)
+            .max(MIN_DURATION_SECONDS)
+    };
+}
 
 pub struct App {
     state: PersistedState,
     storage: NativeStorage,
     should_quit: bool,
     show_help: bool,
+    settings: Option<SettingsDraft>,
     message: String,
 }
 
@@ -17,6 +144,7 @@ impl App {
             storage,
             should_quit: false,
             show_help: false,
+            settings: None,
             message: String::new(),
         }
     }
@@ -33,6 +161,10 @@ impl App {
         self.show_help
     }
 
+    pub const fn settings(&self) -> Option<&SettingsDraft> {
+        self.settings.as_ref()
+    }
+
     pub const fn should_quit(&self) -> bool {
         self.should_quit
     }
@@ -46,6 +178,13 @@ impl App {
 
     pub fn handle_key(&mut self, key: KeyCode, now_ms: u64) {
         self.message.clear();
+        if self.settings.is_some() {
+            if self.handle_settings_key(key) {
+                self.save();
+            }
+            return;
+        }
+
         match key {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('?') => self.show_help = !self.show_help,
@@ -59,6 +198,7 @@ impl App {
                 self.on_timer_event(event);
                 "次のセッションへ移動しました".clone_into(&mut self.message);
             }
+            KeyCode::Char('s') => self.open_settings(),
             _ => return,
         }
         self.save();
@@ -81,6 +221,77 @@ impl App {
                 self.tick(now_ms);
             } else {
                 self.message = format!("操作できませんでした: {error}");
+            }
+        }
+    }
+
+    fn open_settings(&mut self) {
+        if self.state.timer.status() == TimerStatus::Idle {
+            self.settings = Some(SettingsDraft::from_config(self.state.timer.config()));
+            self.show_help = false;
+        } else {
+            "設定は待機中のみ変更できます。現在のセッションをリセットしてください。"
+                .clone_into(&mut self.message);
+        }
+    }
+
+    fn handle_settings_key(&mut self, key: KeyCode) -> bool {
+        match key {
+            KeyCode::Esc | KeyCode::Char('s') => {
+                self.settings = None;
+                "設定の変更をキャンセルしました".clone_into(&mut self.message);
+                false
+            }
+            KeyCode::Up | KeyCode::BackTab => {
+                self.settings
+                    .as_mut()
+                    .expect("settings are open")
+                    .select_previous();
+                false
+            }
+            KeyCode::Down | KeyCode::Tab => {
+                self.settings
+                    .as_mut()
+                    .expect("settings are open")
+                    .select_next();
+                false
+            }
+            KeyCode::Left | KeyCode::Char('-') => {
+                self.settings
+                    .as_mut()
+                    .expect("settings are open")
+                    .adjust(false);
+                false
+            }
+            KeyCode::Right | KeyCode::Char('+' | '=') => {
+                self.settings
+                    .as_mut()
+                    .expect("settings are open")
+                    .adjust(true);
+                false
+            }
+            KeyCode::Enter => self.apply_settings(),
+            _ => false,
+        }
+    }
+
+    fn apply_settings(&mut self) -> bool {
+        let draft = self.settings.take().expect("settings are open");
+        let result = draft
+            .build_config()
+            .map_err(TimerError::from)
+            .and_then(|config| self.state.timer.reconfigure(config));
+
+        match result {
+            Ok(()) => {
+                "設定を保存し、現在のセッションとラウンドをリセットしました"
+                    .clone_into(&mut self.message);
+                true
+            }
+            Err(error) => {
+                self.settings = Some(draft);
+                self.message = format!("設定を適用できませんでした: {error}");
+                false
             }
         }
     }
@@ -123,16 +334,25 @@ const fn completion_message(session: SessionKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     use pomodoro_core::TimerConfig;
 
     use super::*;
 
+    static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
+
     fn app() -> App {
+        let test_id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
         App::new(
-            PersistedState::new(TimerConfig::new(10, 5, 20, 4).unwrap()).unwrap(),
-            NativeStorage::at(PathBuf::from("/tmp/pomodoro-tui-test-state.json")),
+            PersistedState::new(TimerConfig::default()).unwrap(),
+            NativeStorage::at(PathBuf::from(format!(
+                "/tmp/pomodoro-tui-test-{}-{test_id}.json",
+                std::process::id()
+            ))),
         )
     }
 
@@ -156,5 +376,42 @@ mod tests {
 
         assert_eq!(app.state.timer.session(), SessionKind::ShortBreak);
         assert!(app.state.history.days().is_empty());
+    }
+
+    #[test]
+    fn settings_can_be_edited_and_applied_while_idle() {
+        let mut app = app();
+
+        app.handle_key(KeyCode::Char('s'), 0);
+        assert_eq!(
+            app.settings().map(SettingsDraft::selected),
+            Some(SettingsField::FocusDuration)
+        );
+
+        app.handle_key(KeyCode::Right, 0);
+        app.handle_key(KeyCode::Down, 0);
+        app.handle_key(KeyCode::Left, 0);
+        app.handle_key(KeyCode::Enter, 0);
+
+        assert!(app.settings().is_none());
+        assert_eq!(app.state.timer.config().focus_seconds(), 26 * 60);
+        assert_eq!(app.state.timer.config().short_break_seconds(), 4 * 60);
+        assert_eq!(app.state.timer.status(), TimerStatus::Idle);
+        assert_eq!(app.state.timer.remaining_seconds(0), 26 * 60);
+
+        let restored = app.storage.load().unwrap().unwrap();
+        assert_eq!(restored.timer.config().focus_seconds(), 26 * 60);
+        assert_eq!(restored.timer.config().short_break_seconds(), 4 * 60);
+    }
+
+    #[test]
+    fn settings_cannot_open_while_timer_is_running() {
+        let mut app = app();
+        app.toggle_timer(0);
+
+        app.handle_key(KeyCode::Char('s'), 0);
+
+        assert!(app.settings().is_none());
+        assert!(app.message().contains("待機中"));
     }
 }
