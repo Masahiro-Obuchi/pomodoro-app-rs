@@ -3,7 +3,7 @@
 ## Implementation status
 
 - [x] M1: Project foundation and core library
-- [ ] M2: TUI (basic screen, controls, persistence, and notifications are implemented; settings screen remains)
+- [x] M2: TUI
 - [ ] M3: Native Linux GUI
 - [ ] M4: WebAssembly GUI
 - [ ] M5: Packaging and extensions
@@ -42,6 +42,8 @@ The timer supports starting, pausing, resuming, resetting, and skipping to the n
 - The timer continues across system sleep. If its deadline has passed when the system resumes, the session completes at that point.
 - Running state is persisted and restored after an application restart or web page reload.
 - Notifications are not guaranteed while the native application or web page is completely closed.
+- Settings can be changed only while the timer is idle. Applying settings resets the
+  current session to its configured duration and clears progress within the current round.
 
 ### 3.2 History
 

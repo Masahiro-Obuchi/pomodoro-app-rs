@@ -5,10 +5,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Gauge, Paragraph, Wrap},
 };
 
-use crate::app::App;
+use crate::app::{App, SettingsDraft, SettingsField};
 
 pub fn draw(frame: &mut Frame<'_>, app: &App, now_ms: u64) {
     let area = centered(frame.area(), 70, 22);
@@ -28,6 +28,10 @@ pub fn draw(frame: &mut Frame<'_>, app: &App, now_ms: u64) {
     draw_progress(frame, app, now_ms, sections[2]);
     draw_history(frame, app, now_ms, sections[3]);
     draw_footer(frame, app, sections[4]);
+
+    if let Some(settings) = app.settings() {
+        draw_settings(frame, settings);
+    }
 }
 
 fn draw_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
@@ -102,13 +106,16 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let content = if app.show_help() {
         vec![
             Line::from("Space: 開始/一時停止/再開   r: リセット   n: スキップ"),
-            Line::from("?: ヘルプを閉じる   q: 状態を保存して終了"),
+            Line::from("s: 設定   ?: ヘルプを閉じる   q: 状態を保存して終了"),
         ]
     } else if app.message().is_empty() {
-        vec![Line::from(vec![
-            Span::styled("Space", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(": 操作   r: リセット   n: スキップ   ?: ヘルプ   q: 終了"),
-        ])]
+        vec![
+            Line::from(vec![
+                Span::styled("Space", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": 操作   r: リセット   n: スキップ"),
+            ]),
+            Line::from("s: 設定   ?: ヘルプ   q: 終了"),
+        ]
     } else {
         vec![Line::from(app.message().to_owned())]
     };
@@ -120,6 +127,77 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .block(Block::default().borders(Borders::ALL).title(" 操作 ")),
         area,
     );
+}
+
+fn draw_settings(frame: &mut Frame<'_>, settings: &SettingsDraft) {
+    let area = centered(frame.area(), 58, 14);
+    let fields = [
+        SettingsField::FocusDuration,
+        SettingsField::ShortBreakDuration,
+        SettingsField::LongBreakDuration,
+        SettingsField::FocusesBeforeLongBreak,
+    ];
+    let mut lines = Vec::with_capacity(7);
+
+    for field in fields {
+        let selected = field == settings.selected();
+        let marker = if selected { "▶" } else { " " };
+        let (label, value) = setting_text(settings, field);
+        let style = if selected {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::LightCyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        lines.push(Line::from(Span::styled(
+            format!(" {marker} {label}: {value} "),
+            style,
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from("↑/↓: 選択   ←/→: 変更   Enter: 保存"));
+    lines.push(Line::from("Esc または s: キャンセル"));
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .alignment(Alignment::Left)
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" 設定 ")
+                    .style(Style::default().bg(Color::Black)),
+            ),
+        area,
+    );
+}
+
+fn setting_text(settings: &SettingsDraft, field: SettingsField) -> (&'static str, String) {
+    match field {
+        SettingsField::FocusDuration => ("集中時間", format_duration(settings.focus_seconds())),
+        SettingsField::ShortBreakDuration => {
+            ("短い休憩", format_duration(settings.short_break_seconds()))
+        }
+        SettingsField::LongBreakDuration => {
+            ("長い休憩", format_duration(settings.long_break_seconds()))
+        }
+        SettingsField::FocusesBeforeLongBreak => (
+            "長い休憩までの回数",
+            format!("{} 回", settings.focuses_before_long_break()),
+        ),
+    }
+}
+
+fn format_duration(seconds: u64) -> String {
+    if seconds % 60 == 0 {
+        format!("{} 分", seconds / 60)
+    } else {
+        format!("{}:{:02}", seconds / 60, seconds % 60)
+    }
 }
 
 const fn session_label(session: SessionKind) -> &'static str {
