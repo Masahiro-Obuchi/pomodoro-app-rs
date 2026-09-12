@@ -335,7 +335,6 @@ const fn completion_message(session: SessionKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use std::{
-        path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
     };
 
@@ -347,12 +346,13 @@ mod tests {
 
     fn app() -> App {
         let test_id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
+        let storage_path = std::env::temp_dir().join(format!(
+            "pomodoro-tui-test-{}-{test_id}.json",
+            std::process::id()
+        ));
         App::new(
             PersistedState::new(TimerConfig::default()).unwrap(),
-            NativeStorage::at(PathBuf::from(format!(
-                "/tmp/pomodoro-tui-test-{}-{test_id}.json",
-                std::process::id()
-            ))),
+            NativeStorage::at(storage_path),
         )
     }
 
