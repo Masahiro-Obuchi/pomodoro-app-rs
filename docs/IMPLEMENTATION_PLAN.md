@@ -1,5 +1,11 @@
 # Pomodoro App Implementation Plan
 
+> **Historical document — superseded for future development (2026-09-12).**
+> This plan records the initial Pomodoro implementation and its original roadmap.
+> The accepted specifications for future development are now [Product Spec](PRODUCT_SPEC.md) and [Domain Model](DOMAIN_MODEL.md).
+> Where this document differs, those documents take precedence. In particular, daily-only history and continued timing across application closure or observation gaps are no longer the target behavior.
+> The milestone checkboxes below describe the original milestones, not completion of the expanded product MVP; the GUI/Web roadmap is not an adopted implementation order for that MVP.
+
 ## Implementation status
 
 - [x] M1: Project foundation and core library

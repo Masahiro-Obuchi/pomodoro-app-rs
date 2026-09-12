@@ -1,8 +1,8 @@
 # Pomodoro App in Rust
 
-A Pomodoro timer for Linux, built as a hands-on Rust learning project.
+A Rust application for helping people start work, stay oriented, return after distractions, and review their work. The current implementation is a Pomodoro timer for Linux, built as a hands-on Rust learning project.
 
-The project currently provides a terminal user interface built with Ratatui. The timer state machine lives in the UI-independent `pomodoro-core` crate so it can later be reused by an egui/eframe application targeting both native Linux and WebAssembly.
+The project currently provides a terminal user interface built with Ratatui. The timer state machine lives in the UI-independent `pomodoro-core` crate. The TUI remains the initial frontend for validating the expanded product and domain model.
 
 > [!NOTE]
 > The current TUI text and desktop notifications are in Japanese. Internationalization can be added without changing the core timer logic.
@@ -18,7 +18,14 @@ The project currently provides a terminal user interface built with Ratatui. The
 - Linux desktop notifications through `notify-send`
 - Platform-independent timer logic with deterministic unit tests
 
-See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for the architecture, accepted specifications, and roadmap.
+## Accepted specifications
+
+- [Product Spec](docs/PRODUCT_SPEC.md): product goal, MVP scope, behavior, and data preservation requirements.
+- [Domain Model](docs/DOMAIN_MODEL.md): state ownership, session and interruption models, invariants, and transitions.
+
+These documents define the accepted target behavior; they do not imply that the new features are implemented. In particular, the target specification stops timing during application closure and observation gaps, unlike the current deadline-based restoration behavior described above.
+
+The [original implementation plan](docs/IMPLEMENTATION_PLAN.md) is retained as a historical record of the initial Pomodoro implementation. Its roadmap and specifications are superseded by the documents above where they differ.
 
 ## Requirements
 
