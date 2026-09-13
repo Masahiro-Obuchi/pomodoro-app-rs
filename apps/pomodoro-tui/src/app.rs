@@ -334,9 +334,7 @@ const fn completion_message(session: SessionKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::atomic::{AtomicU64, Ordering},
-    };
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use pomodoro_core::TimerConfig;
 

@@ -15,13 +15,9 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let storage = NativeStorage::discover()?;
-    let state = match storage.load() {
-        Ok(Some(state)) => state,
-        Ok(None) => PersistedState::new(TimerConfig::default())?,
-        Err(error) => {
-            eprintln!("保存データを読み込めなかったため、初期状態で起動します: {error}");
-            PersistedState::new(TimerConfig::default())?
-        }
+    let state = match storage.load()? {
+        Some(state) => state,
+        None => PersistedState::new(TimerConfig::default())?,
     };
     let mut app = App::new(state, storage);
 
