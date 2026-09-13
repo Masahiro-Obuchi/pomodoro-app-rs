@@ -2,6 +2,8 @@
 
 採用日：2026-09-12
 
+更新日：2026-09-14
+
 この文書は [Product Spec](PRODUCT_SPEC.md) をドメイン上の状態・データ・制約として定義する。今後の実装の設計基準であり、現在のコードがすべて実装済みであることを意味しない。型名・フィールド名は概念上の名称であり、保存JSONの表現やRustの公開APIとは区別する。
 
 ## 1. 設計原則と所有関係
@@ -25,8 +27,7 @@
 │     └─ AwaitingQuickStartDecision
 ├─ History
 │  ├─ 終了済みSession
-│  ├─ HistoryEvent
-│  └─ 旧形式の日別集計
+│  └─ HistoryEvent
 └─ 保存管理情報：schema version、保存世代、ID採番情報
 ```
 
@@ -50,7 +51,7 @@
 
 1. 観測の連続性、観測空白、時計異常を確認する。
 2. 信頼できる経過時間だけを残り時間の範囲内で反映する。
-3. 設定時間に達した場合、自然完了を確定する。
+3. 設定時間に達した場合、自然完了のドメイン遷移を生成する。
 4. 対象Sessionがまだ操作可能なら、ユーザー操作を適用する。
 
 Observation Gapは自然完了判定より先に処理する。保存された期限が過ぎたことだけを理由に、Focus・QuickStart・Breakを完了させない。
@@ -95,8 +96,6 @@ Observation Gapは自然完了判定より先に処理する。保存された�
 - 開始後に種別・設定時間・Current Taskを変更しない。
 - BreakにはCurrent TaskとQuick Start継続元を持たせない。
 - 同じSessionを二度終了させない。
-
-旧進行中タイマーをSessionへ変換しないため、新しいSessionに移行前の不明な開始時刻や経過時間を埋め込まない。
 
 ## 4. SessionKindとSessionOutcome
 
@@ -159,11 +158,10 @@ QuickStartはMVPでは固定120秒とする。実行中・中断中などの状�
 
 | 項目 | 内容 |
 | --- | --- |
-| ID | 所属Session内で一意な識別子 |
+| ID | 採用中の保存系列内の全中断で一意な識別子。所属Session内の一意性も満たす |
 | kind | InterruptionKind |
 | 開始境界の日時 | 計時を止めた境界。Distractionでは申告時刻 |
 | 記録日時 | アプリが中断を認識・記録した日時 |
-| アプリ起動をまたいだか | 終了・再起動を含む中断かを示す |
 | 時刻の不確かさ | 検出した時計異常などの情報 |
 | 終了情報 | 終了日時、InterruptionOutcome、算出できる経過時間。不明ならその理由 |
 
@@ -296,12 +294,12 @@ Quick Start本体は時間満了時点でHistoryへ移す。AwaitingQuickStartDe
 
 ### 10.1 History
 
-形式は`struct`。終了済みSession、履歴event、旧日別集計を保持する。
+形式は`struct`。終了済みSessionと履歴eventを保持する。
 
-- 終了済みSession IDとevent IDは重複しない。
+- Session IDはSession間で、event IDはevent間で重複しない。両者は別の識別子として扱う。
 - 各eventの参照先Sessionは、snapshotまたは終了済み一覧に存在する。
 - 現在のSessionの集計では、snapshotとそのSessionのeventを参照できる。
-- 旧日別集計と、新しい計時区間から求めた集計を区別する。
+- 日別集計や統計はSession・eventから求め、保存上の独立した正本を持たない。
 - 現在状態を更新するためのevent replay機能は持たない。
 
 ### 10.2 HistoryEventとEventKind
@@ -312,16 +310,17 @@ HistoryEventは共通情報を持つ`struct`、EventKindは種類別のデータ
 
 | EventKind | 記録する意味 |
 | --- | --- |
-| SessionStarted | Sessionの開始 |
 | RunIntervalRecorded | 実行区間の開始・終了日時、その区間で計時したms、時刻の不確かさ |
 | InterruptionStarted | 中断の開始 |
 | InterruptionEnded | 中断の終了と、その結果・経過時間 |
-| SessionEnded | Sessionの終了結果 |
 | QuickStartDecisionMade | 終了／継続の選択と継続先 |
-| AppClosing / AppRestored | Sessionが終了・再起動をまたいだ事実 |
+| AppClosing | 対象Sessionの実行・中断・継続選択待ちで、アプリ終了操作を行った事実 |
+| AppRestored | 対象Sessionのsnapshotをアプリ起動時に復元した事実 |
 | ObservationGapDetected | 最終確認と再観測の間の不明区間 |
 
 開始前の入力、画面操作、分析に不要な予定変更などはeventにしない。開始待ちでは、必要なsnapshot更新だけを行う。
+
+Sessionの開始日時・終了日時・結果はSession本体を正本とし、SessionStarted／SessionEnded eventには複製しない。AppClosingとAppRestoredは独立したenum variantであり、一つの曖昧なvariantにはまとめない。アプリ起動をまたいだ事実はこれらのeventから確認し、Interruptionにcrossed_app_boundaryを重複保持しない。ObservationGapDetectedは、すでに中断中でも観測空白を記録するために残す。
 
 ### 10.3 実行区間の確定
 
@@ -333,14 +332,16 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 
 終了済みSessionの`elapsed_ms`は、そのSessionの確定した実行区間の計時時間の合計と一致する。開いている実行区間の計時時間を、区間確定時に二度加算しない。
 
+対象Sessionの確定済み区間の合計をCとすると、Runningでは`run.elapsed_ms_at_start = C`であり、未確定区間の計時時間は`Session.elapsed_ms - C`。Interruptedおよび終了済みSessionでは`Session.elapsed_ms = C`となる。
+
 ## 11. 状態遷移
 
 ### 11.1 ユーザー操作と自然完了
 
 | 操作・契機 | 遷移 | snapshot・履歴の変更 |
 | --- | --- | --- |
-| Focus / Quick Start開始 | 作業開始待ち → 実行中 | 新Session、SessionStarted |
-| Break開始 | 休憩開始待ち → 実行中 | 新Session、SessionStarted |
+| Focus / Quick Start開始 | 作業開始待ち → 実行中 | 開始日時を持つ新Session |
+| Break開始 | 休憩開始待ち → 実行中 | 開始日時を持つ新Session |
 | Pause | 実行中 → Pause中 | 区間確定、InterruptionStarted |
 | Distraction | Focus / Quick Start実行中 → Distraction中 | 区間確定、InterruptionStarted |
 | Resume | Pause / AppExit / ObservationGap中 → 実行中 | Resumedで中断終了、新しい実行区間 |
@@ -348,7 +349,7 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 | Focus自然完了 | 実行中 → 休憩開始待ち | 最終区間、Completed、Historyへの移動、ラウンド更新 |
 | Quick Start自然完了 | 実行中 → 継続選択待ち | 最終区間、Completed、Historyへの移動。ラウンドは維持 |
 | Quick Start終了選択 | 継続選択待ち → Focus開始待ち | Finishの選択event。Sessionを再終了しない |
-| Quick Start継続選択 | 継続選択待ち → Focus実行中 | Continueの選択event、新Focus、新FocusのSessionStarted |
+| Quick Start継続選択 | 継続選択待ち → Focus実行中 | Continueの選択event、開始日時を持つ新Focus |
 | Break自然完了 | 実行中 → Focus開始待ち | Completed、Historyへの移動。長休憩ならラウンドを0へ |
 | 中止 | 実行中／中断中 → Focus開始待ち | 区間または中断終了、Cancelled。長休憩ならラウンドを0へ |
 | Reset | 実行中／中断中 → 同じ種別の開始待ち | 区間または中断終了、Reset、Current Taskを下書きへ |
@@ -356,7 +357,7 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 | Quick StartのSkip | 実行中／中断中 → Focus開始待ち | 区間または中断終了、Skipped。休憩は挟まない |
 | BreakのSkip | 実行中／中断中 → Focus開始待ち | 区間または中断終了、Skipped。長休憩ならラウンドを0へ |
 
-中断中にSessionを終了すると、InterruptionEndedのSessionEndedと、SessionEndedの終了結果を対応付ける。
+中断中にSessionを終了すると、InterruptionEndedのSessionEndedという中断結果を、Session本体の終了結果・日時と対応付ける。SessionEndedという名前の履歴eventは設けない。
 
 開始待ちでのResetは無操作とする。開始待ちのSkipは予定の変更だけで、Session履歴を作らない。休憩開始待ちからQuick Startを始める場合は、まず休憩をSkipして作業開始待ちへ戻る。
 
@@ -393,7 +394,7 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 
 拒否された操作自体は状態・履歴を変更しない。ただし、操作前に独立して適用した時間経過による自然完了は保持する。対象がその時点で終了した場合、同じ入力を次のSessionへ流用しない。
 
-## 12. 保存の整合性と旧形式の扱い
+## 12. 保存の整合性
 
 | 情報 | 復元・判断の基準 |
 | --- | --- |
@@ -404,27 +405,29 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 | 終了済みSessionの結果 | HistoryのSession記録 |
 | 過去の中断・復帰・実行区間 | 履歴event |
 
-同じ完了をSession記録とSessionEnded eventの両方から二重に集計しない。eventに結果を記録していても、現在状態の復元方法は変えない。
+完了数・Sessionの終了結果はSession本体から集計する。中断終了eventにSessionの終了理由が含まれていても、Session完了として重複集計しない。
 
 ### 12.1 一括保存と再試行
 
-一つの遷移から生成したsnapshot、終了済みSession、event群、保存世代・ID採番情報をまとめて保存する。
+「ドメイン遷移」は、入力された時刻・操作からsnapshot、終了済みSession、event群、ID採番情報の変更候補を生成することを指す。「保存確定」は、保存層がその候補の永続化成功を確認することを指す。前者の成功だけでは、ユーザー向けの操作成功を意味しない。
+
+コアはI/Oを行わず、保存世代・ロック・再試行・通知を管理しない。アプリケーション側が変更候補と最後に保存できた状態を区別し、保存層の成功応答後に候補を採用して副作用を実行する。コアの操作APIは、拒否した操作が元の状態や採番値を部分更新しない境界を提供する。
+
+一つの遷移から生成したsnapshot、終了済みSession、event群、ID採番情報に、保存層が保存世代を付けてまとめて保存する。通常tickの計時更新も純粋な遷移だが、保存タイミングはチェックポイント方針に従う。
 
 - 保存再試行では同じ変更内容とIDを使い、遷移を再実行して別のSession・eventを作らない。
 - Quick Start継続は、選択待ちのままか、継続先Focusと関連eventがそろった状態のどちらかで保存する。
 - 保存失敗を利用者に示し、保存済みとして終了しない。
 - snapshotと履歴の不整合をevent replayで黙って補正せず、読込エラーまたは明示的な復旧対象にする。
-- 全体schema version、migration、元データの保護は保存層で扱う。
+- 全体schema version、保存世代、対応形式の判定、ファイルの保護は保存層で扱う。
 
-### 12.2 旧進行中タイマーは移行しない
+保存待ちはアプリケーション側の状態であり、TimerStateやInterruptionKindに追加しない。保存失敗中に観測を保留した区間は、保存回復後に通常のObservation Gapとしてコアへ渡し、推測して加算しない。
 
-旧形式からは、有効な設定、日別集計、ラウンド進捗を移行し、元データをバックアップする。旧タイマーの種別に対応するReadyから開始する。
+### 12.2 初期状態
 
-旧進行中タイマーの経過時間、残り時間、締切、中断状態は、新しいActive Sessionへ変換しない。新たにStartした時点でSessionを作成し、設定された全時間で始める。
+新規データの初期状態は、既定Settings、ラウンド進捗0、Current Task未入力のFocus開始待ち、空のHistoryとする。初期化だけではSession・Interruption・eventを作らない。
 
-旧期限超過を理由とした完了の加算、架空のSession・Interruption・eventの生成は行わない。移行前の不明な時間を新Sessionに持ち込む追加モデルは設けない。
-
-旧日別集計は詳細へ復元せず、新しい計時区間の集計と区別して保持する。この移行上の扱いは、新形式のActive Sessionの復元とは別とする。
+新規初期化を許可できる保存先かどうかは保存層が判断する。読込失敗を初期状態へ置き換える処理はドメインにも保存層にも設けない。
 
 ## 13. 既存型との対応
 
@@ -436,7 +439,7 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 | TimerConfig | 基本的に維持する | 時間設定と検証を活用し、Quick Startは固定時間とする |
 | TimerEvent | 履歴eventへ置き換える | 完了・Skipに加え、区間・中断・復帰・継続を記録する |
 | History | 責務を変更する | 日別集計の更新中心から、終了済みSessionとeventの保持へ |
-| DailySummary | 旧履歴用として維持する | 既存データの意味を保つ |
+| DailySummary | 保存モデルから外す | 日別集計が必要ならSession・eventから求める表示用の値とする |
 | PersistedState | 責務を変更する | snapshot・History・全体versionなどの保存単位へ拡張する |
 | TimerStatus | 表示向けの派生値にする | 進行状態と中断理由から求め、独立した保存状態にしない |
 | TUIのApp | 接続処理を更新する | 入力・描画・保存・通知を担当し、コアの規則を重複実装しない |
@@ -445,8 +448,8 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 
 ## 14. Persistence schemaとの境界
 
-本モデルを前提として、次に保存形式全体のschemaとmigrationを設計できる。旧進行中タイマーの継続や移行前の不明値を表す追加Session型は不要とする。
+保存形式全体の構造、JSONのタグ・フィールド配置、schema versionの番号、I/Oの詳細は [Persistence Schema](PERSISTENCE_SCHEMA.md) に定義する。本書は状態・所有関係・遷移の意味を定義し、保存文書ではそれを再定義しない。
 
 Observation Gapの具体的な閾値・チェックポイント間隔は内部ポリシーで扱い、保存形式のユーザー設定項目にはしない。保存する概念は、計時済み時間、最終確認時点、空白の検出時点、不明区間の事実とする。
 
-JSONの具体的なタグ・フィールド配置、schema versionの番号、I/Oの詳細は本書で追加確定せず、保存形式の設計で定める。
+旧形式専用のSession・集計・互換フィールドは新しいモデルに設けない。

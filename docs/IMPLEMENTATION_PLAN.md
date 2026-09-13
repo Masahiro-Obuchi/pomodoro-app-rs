@@ -1,227 +1,94 @@
-# Pomodoro App Implementation Plan
+# Implementation Plan
 
-> **Historical document — superseded for future development (2026-09-12).**
-> This plan records the initial Pomodoro implementation and its original roadmap.
-> The accepted specifications for future development are now [Product Spec](PRODUCT_SPEC.md) and [Domain Model](DOMAIN_MODEL.md).
-> Where this document differs, those documents take precedence. In particular, daily-only history and continued timing across application closure or observation gaps are no longer the target behavior.
-> The milestone checkboxes below describe the original milestones, not completion of the expanded product MVP; the GUI/Web roadmap is not an adopted implementation order for that MVP.
+更新日：2026-09-14
 
-## Implementation status
+この文書は拡張MVPの開発順序、Phaseの目的・依存関係・完了条件、Phase単位の進捗を管理する。初期Pomodoroの旧計画を置き換える。過去の内容はGit履歴で参照できる。
 
-- [x] M1: Project foundation and core library
-- [x] M2: TUI
-- [ ] M3: Native Linux GUI
-- [ ] M4: WebAssembly GUI
-- [ ] M5: Packaging and extensions
+## 1. 文書の責務と運用
 
-## 1. Purpose
-
-Build a Pomodoro timer suitable for daily use on Linux while learning Rust through a practical project. Complete the TUI first, then provide native Linux and WebAssembly GUIs that reuse the same core timer logic.
-
-## 2. Technical direction
-
-- Keep timer state transitions in `pomodoro-core`, independent of the UI and operating system.
-- Use Ratatui for the first frontend.
-- Use egui/eframe to share GUI code between native Linux and WebAssembly.
-- Keep GTK 4 as a low-priority future frontend and outside the MVP.
-- Isolate platform-specific time, persistence, and notification behavior behind adapters.
-- Run `cargo fmt`, `cargo clippy`, and `cargo test` at every milestone.
-
-## 3. MVP specification
-
-### 3.1 Timer
-
-| Setting | Default |
-| --- | ---: |
-| Focus session | 25 minutes |
-| Short break | 5 minutes |
-| Long break | 15 minutes |
-| Focus sessions before a long break | 4 |
-
-The timer supports starting, pausing, resuming, resetting, and skipping to the next session.
-
-- A completed focus session is followed by a short break, except that every fourth completed focus is followed by a long break.
-- Completing a session sends a notification but does not automatically start the next session.
-- Only naturally completed focus sessions count toward history.
-- Skipped, reset, and interrupted sessions do not count toward history.
-- Time spent paused does not count toward the session duration.
-- The timer continues across system sleep. If its deadline has passed when the system resumes, the session completes at that point.
-- Running state is persisted and restored after an application restart or web page reload.
-- Notifications are not guaranteed while the native application or web page is completely closed.
-- Settings can be changed only while the timer is idle. Applying settings resets the
-  current session to its configured duration and clears progress within the current round.
-
-### 3.2 History
-
-The MVP stores daily aggregates only.
-
-```json
-{
-  "schema_version": 1,
-  "days": {
-    "2026-07-21": {
-      "completed_focus_sessions": 4,
-      "focused_seconds": 6000
-    }
-  }
-}
-```
-
-- Use the local date corresponding to the scheduled completion time.
-- For each naturally completed focus session, increment the count and add its configured duration.
-- Use the same logical data format on native and web targets.
-- Include `schema_version` to support future migrations.
-- Add detailed event history in a separate storage area without changing the daily aggregate format.
-
-### 3.3 Notifications and persistence
-
-- Use desktop notifications on native Linux.
-- Use the Notifications API on the web after the user grants permission.
-- Fall back to an in-app message where system notifications are unavailable.
-- Follow the XDG Base Directory specification for native settings, state, and history.
-- Use browser local storage on the web.
-- Write native state through a temporary file and replace the destination to reduce corruption from interrupted writes.
-
-## 4. Architecture
-
-```text
-pomodoro-app-rs/
-├── Cargo.toml
-├── crates/
-│   ├── pomodoro-core/
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── config.rs
-│   │       ├── history.rs
-│   │       ├── session.rs
-│   │       └── timer.rs
-│   └── pomodoro-platform/
-│       └── src/
-│           ├── storage.rs
-│           └── notification.rs
-└── apps/
-    ├── pomodoro-tui/
-    └── pomodoro-gui/
-```
-
-### 4.1 `pomodoro-core`
-
-This crate is independent of the operating system, UI toolkit, filesystem, and asynchronous runtime.
-
-- `TimerConfig`: session durations and focus count before a long break
-- `SessionKind`: focus, short break, or long break
-- `TimerState`: idle, running, or paused, including persisted timing data
-- `PomodoroTimer`: state transitions and completed focus count
-- `TimerEvent`: events passed to UI, history, and notification layers
-- `History`: versioned daily aggregates
-
-The frontend supplies the current Unix time in milliseconds. A running timer calculates its remaining time from a stored deadline instead of decrementing a counter every second. This prevents drift after delayed redraws, background-tab throttling, or system sleep.
-
-### 4.2 `pomodoro-platform`
-
-This crate provides native time, persistence, and notification adapters. WebAssembly-specific implementations can live in conditionally compiled `wasm32` modules in the GUI crate when needed.
-
-### 4.3 `pomodoro-tui`
-
-The Ratatui frontend displays:
-
-- Current session kind
-- Remaining time
-- Timer status
-- Progress within the current round
-- Today's completed focus count and total focus time
-- Keyboard help
-
-Initial key bindings:
-
-| Key | Action |
+| 文書・成果物 | 管理する内容 |
 | --- | --- |
-| `Space` | Start, pause, or resume |
-| `r` | Reset |
-| `n` | Skip to the next session |
-| `s` | Open settings |
-| `?` | Toggle help |
-| `q` | Save and quit |
+| [Product Spec](PRODUCT_SPEC.md) | ユーザー価値、MVPスコープ、期待する振る舞い |
+| [Domain Model](DOMAIN_MODEL.md) | 状態、所有関係、遷移、invariant |
+| [Persistence Schema](PERSISTENCE_SCHEMA.md) | 保存形式、読込・保存・復旧、整合性と排他 |
+| 本書 | 実装順序、依存関係、到達目標、Phase単位の進捗 |
+| コード・テスト・PR | 具体的な実装、変更点、検証の証拠 |
 
-### 4.4 `pomodoro-gui`
+本書には型・フィールド一覧、キー割当、全テストケース、関数やファイル単位の完了チェックを複製しない。仕様を変える場合は対応する仕様文書を先に更新し、開発順序や完了条件への影響だけを本書へ反映する。
 
-Share the main screen between native Linux and WebAssembly with egui/eframe. Implement persistence, notifications, and current-time access separately for each target. On the web, recompute state when the tab becomes visible and after a page reload.
+進捗は次節の表だけで管理する。状態は「未着手」「進行中」「確認待ち」「完了」「保留」とし、Phaseの開始・完了・依存関係の変更時に更新する。完了は文書作成や一部コードの存在だけで判定せず、各Phaseの完了条件と検証結果で判断する。必要に応じて関連PRへのリンクを表の備考へ加える。
 
-## 5. Milestones
+## 2. 現在の進捗
 
-### M1: Project foundation and core
+現行コードにはRust workspace、UI非依存のコア、基本Pomodoro、設定編集付きTUI、JSON保存の土台がある。拡張Domain ModelとV1保存形式はまだ反映されていない。以下は拡張MVPに対する進捗であり、既存機能の詳細台帳ではない。
 
-- Create the Cargo workspace.
-- Define configuration, state, event, and history types.
-- Implement start, pause, resume, reset, skip, and time advancement.
-- Add deterministic tests that supply timestamps directly.
+| Phase | 到達目標 | 依存関係 | 現在の進捗 | 備考 |
+| --- | --- | --- | --- | --- |
+| 0 | 実装の設計基準を揃える | なし | 完了 | 保存成功境界・系列内保証・最小振り返り表示を採用 |
+| 1 | 新しいドメインをコアで扱える | Phase 0 | 未着手 | 既存コアを基礎に、型・遷移・履歴と既存呼出元の追従を進める |
+| 2 | V1データを安全に保存・復元できる | Phase 1 | 未着手 | 永続化をTUI接続より先に検証する |
+| 3 | TUIで着手・集中・復帰の一連の操作ができる | Phase 2 | 未着手 | コアと保存層をユーザーフローへ接続する |
+| 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 未着手 | 最小限の履歴確認と一連の動作の受入検証 |
 
-Completion criteria:
+## 3. Phase構成
 
-- All transitions can be tested without waiting for real time.
-- The fourth completed focus session transitions to a long break.
-- A large time jump emits exactly one completion event.
-- History can be serialized to and restored from JSON.
+### Phase 0：設計基準の確定
 
-### M2: TUI
+- **目的**：実装が参照する仕様・モデル・保存契約を揃える。
+- **変更対象**：Product Spec、Domain Model、Persistence Schema、本計画。
+- **依存関係**：なし。
+- **完了条件**：文書間の責務と整合性を確認し、新規データでの開始、snapshotの正本性、履歴の所有先、保存失敗時の扱いを実装基準として確認できている。
+- **後続への接続**：Phase 1以降はこの基準を参照し、仕様を個別の実装判断で再定義しない。
 
-- Implement the event loop and screen.
-- Implement keyboard controls and settings.
-- Persist configuration, timer state, and history.
-- Send Linux desktop notifications.
+### Phase 1：ドメインと計時の基盤
 
-Completion criteria:
+- **目的**：採用した状態・履歴・時間の規則を、UIやファイルI/Oに依存せず実行できるようにする。
+- **変更対象**：pomodoro-coreのモデル、状態遷移、計時、履歴生成と検証。型変更の都度、既存platform・TUIの呼出元を最小限追従させる。
+- **依存関係**：Phase 0。
+- **完了条件**：通常Focus・Quick Start・Break、中断と復帰、終了と再開時の状態をコアで扱える。時間を引数で与えるテストでDomain Modelの主要遷移とinvariantを確認でき、Observation Gapの内部policyを計時に適用できる。
+- **後続への接続**：Phase 2が保存・復元する具体的なモデルと、snapshot・履歴を一括更新する境界を提供する。
 
-- A short test configuration can complete a focus-and-break sequence.
-- The application restores the terminal correctly when it exits.
-- Timer state and history survive a restart.
+型や時間規則はここで一貫した形にする。新たな互換モデルや汎用イベント再生エンジンは作らない。既存APIを一時的にlegacy境界へ隔離する場合も、V1への変換・新旧状態の同期は実装せず、Phase 2の保存切替時に取り除く。
 
-### M3: Native Linux GUI
+Phase内は、Session／種別／終了結果 → TimerState／Interruption → PomodoroState／進行状態 → 純粋な状態遷移 → HistoryEvent生成の順で小さく進める。既存呼出元のadapter・追従は最後へ延期せず各変更に同梱し、その都度workspace全体を検証する。
 
-- Implement the egui/eframe screen.
-- Reuse the core, persistence, and notification layers from the TUI.
-- Add a `.desktop` file and application icon.
+### Phase 2：永続化と復元の基盤
 
-Completion criteria:
+- **目的**：現在状態と履歴を、V1の単一JSONとして安全に保持する。
+- **変更対象**：pomodoro-platformの保存・時刻アダプター、保存契約の検証、起動・終了・復元の接続境界。V1切替に伴う既存TUIの最小限の追従と、一時的な旧API境界の撤去。
+- **依存関係**：Phase 1のモデルと遷移。
+- **完了条件**：新規作成、保存、復元、明示的なバックアップ復旧が保存仕様どおり動作する。読込失敗による上書き、部分保存、再試行時の重複、二重起動による更新消失を防げることを、実ファイルを使う検証で確認できる。
+- **後続への接続**：Phase 3が利用する書込許可・保存結果・復元結果の境界を提供する。
 
-- The GUI uses the same transitions, settings, and history as the TUI.
-- It can be launched from the Linux desktop and send notifications.
+このPhaseでschema_version、save_generation、ID採番の保存、atomic save、排他と失敗時の扱いを揃える。保存形式は最初から拡張MVPのモデルを対象とし、互換処理のための中間形式を作らない。候補の保存成功後に操作成功を伝えるアプリケーション境界も接続する。Phase 3までTUIをビルド不能のまま残さない。
 
-### M4: WebAssembly GUI
+### Phase 3：TUIでの着手・集中・復帰
 
-- Add a `wasm32-unknown-unknown` build.
-- Implement browser persistence, notification permission handling, and visibility restoration.
-- Generate artifacts suitable for static hosting.
+- **目的**：採用したユーザーフローを、既存TUIから日常的に操作できるようにする。
+- **変更対象**：pomodoro-tuiの入力・表示・設定・通知・ライフサイクル接続。
+- **依存関係**：Phase 2までのコアと永続化基盤。
+- **完了条件**：Current Task、Quick Startの終了／継続、Pause／Resume、Distraction／Return、手動Breakを操作できる。終了・再起動後も仕様どおりの状態で再開を待ち、保存失敗と未対応ファイルへの対処が利用者に伝わる。
+- **後続への接続**：Phase 4で履歴と照合できる、実際の操作経路を提供する。
 
-Completion criteria:
+既存の設定・通知・表示を新しいモデルへ接続する。計時・完了・中断の判断はコアに置き、TUI側で重複実装しない。
 
-- The native GUI screen and transitions work in a browser.
-- Remaining time is corrected after returning from a background tab.
-- Running state and history survive a page reload.
+### Phase 4：履歴の確認とMVPの受入検証
 
-### M5: Packaging and extensions
+- **目的**：着手・作業・復帰の記録を確認し、拡張MVPが目的を満たすか判断できるようにする。
+- **変更対象**：最小振り返りTUI、保存記録と集計の検証、コンポーネントをまたぐテスト、利用方法のドキュメント。
+- **依存関係**：Phase 3の操作フロー。
+- **完了条件**：Product Specで定めた最小振り返り指標を利用者がTUIで確認でき、保存されたSession・中断・復帰と表示結果が一致する。Product Specの確認例を操作・保存・再起動・履歴の一連の流れで検証でき、通常の利用手順と保存失敗時の案内が実装と一致している。
+- **後続への接続**：実際の利用から得た課題を基に、MVP後の優先順位を決める。
 
-- Add PWA support, offline startup, and installation instructions.
-- Select and implement a Linux packaging format.
-- Add detailed history, statistics, sound, and automatic transitions as needed.
-- Reassess the priority of a GTK 4 frontend.
-- Add internationalization for UI text and notifications.
+詳細履歴一覧や全統計のダッシュボードは要求しないが、開発者向けのデータ検証だけで完了にしない。表示範囲の正本はProduct Specとする。
 
-## 6. Quality policy
+## 4. 各Phaseに共通する完了の判断
 
-- `cargo fmt --all -- --check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
-- Core tests must not sleep or wait for real time.
-- Invalid configuration, timestamp overflow, and invalid transitions must return errors.
-- UI layers must not duplicate timer business rules.
+- 対象Phaseの完了条件を満たし、仕様文書と実装の間に未説明の差がない。
+- 変更に関係するコアの決定的なテスト、保存層の実ファイル検証、TUIの操作確認を行う。
+- Rustコードを変更したPhaseでは、各増分で`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`を通す。coreだけ成功しplatform・TUIが壊れた状態を完了扱いしない。検証結果はPRに残し、本書へ逐次転記しない。
+- 未完了の後続Phaseがある間は、拡張MVP全体を完成扱いしない。各Phase内はレビュー可能な大きさのPRに分けてよい。
 
-## 7. Risks and mitigations
+## 5. MVP後の扱い
 
-| Risk | Mitigation |
-| --- | --- |
-| Browsers throttle background timers | Recompute remaining time from the stored deadline |
-| Closed pages and processes cannot notify reliably | Apply completion on restoration and document the limitation |
-| TUI and GUI behavior diverges | Keep all state transitions in `pomodoro-core` |
-| Future formats cannot read existing data | Version stored data and provide migrations |
-| Too many targets delay a usable result | Complete the core, TUI, native GUI, and WebAssembly target in that order |
+Later Box、AI、GUI、統計表示の拡充はProduct Specに従ってMVP外とする。固定の後続PhaseやGUI技術を先に決めず、Phase 4後の利用結果を見て優先順位を更新する。

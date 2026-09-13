@@ -22,10 +22,13 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 - [Product Spec](docs/PRODUCT_SPEC.md): product goal, MVP scope, behavior, and data preservation requirements.
 - [Domain Model](docs/DOMAIN_MODEL.md): state ownership, session and interruption models, invariants, and transitions.
+- [Persistence Schema](docs/PERSISTENCE_SCHEMA.md): single-JSON format, validation, atomic saves, recovery, and single-process protection.
 
 These documents define the accepted target behavior; they do not imply that the new features are implemented. In particular, the target specification stops timing during application closure and observation gaps, unlike the current deadline-based restoration behavior described above.
 
-The [original implementation plan](docs/IMPLEMENTATION_PLAN.md) is retained as a historical record of the initial Pomodoro implementation. Its roadmap and specifications are superseded by the documents above where they differ.
+The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
+
+The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, dependencies, completion criteria, and phase-level progress. Detailed behavior belongs in the specifications; implementation details and verification evidence belong in code, tests, and PRs. The original plan remains available in Git history.
 
 ## Requirements
 
