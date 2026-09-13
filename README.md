@@ -26,6 +26,8 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 These documents define the accepted target behavior; they do not imply that the new features are implemented. In particular, the target specification stops timing during application closure and observation gaps, unlike the current deadline-based restoration behavior described above.
 
+The new domain API is available in `pomodoro-core`, but the TUI and existing storage still use the explicitly isolated `pomodoro_core::legacy` API until the V1 storage cutover. Quick Start, interruption/recovery history, and the new timing rules are not yet available through the TUI. This temporary boundary does not migrate or synchronize old data.
+
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
 The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, dependencies, completion criteria, and phase-level progress. Detailed behavior belongs in the specifications; implementation details and verification evidence belong in code, tests, and PRs. The original plan remains available in Git history.
