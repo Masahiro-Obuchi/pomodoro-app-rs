@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{SessionKind, TimerEvent};
+use crate::legacy::{SessionKind, TimerEvent};
 
 pub const CURRENT_HISTORY_SCHEMA_VERSION: u32 = 1;
 

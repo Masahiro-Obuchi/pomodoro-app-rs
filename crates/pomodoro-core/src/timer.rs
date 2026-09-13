@@ -2,7 +2,7 @@ use std::{error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConfigError, SessionKind, TimerConfig};
+use crate::{ConfigError, TimerConfig, legacy::SessionKind};
 
 /// Persistable internal timer state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,7 +64,7 @@ impl PomodoroTimer {
         config.validate()?;
         Ok(Self {
             state: TimerState::Idle {
-                remaining_ms: config.duration_millis(SessionKind::Focus),
+                remaining_ms: config.duration_millis(SessionKind::Focus.into()),
             },
             config,
             session: SessionKind::Focus,
@@ -199,7 +199,7 @@ impl PomodoroTimer {
         self.config = config;
         self.completed_focuses_in_round = 0;
         self.state = TimerState::Idle {
-            remaining_ms: self.config.duration_millis(self.session),
+            remaining_ms: self.config.duration_millis(self.session.into()),
         };
         Ok(())
     }
@@ -207,7 +207,7 @@ impl PomodoroTimer {
     /// Restores the current session's full duration and returns it to idle.
     pub fn reset(&mut self) {
         self.state = TimerState::Idle {
-            remaining_ms: self.config.duration_millis(self.session),
+            remaining_ms: self.config.duration_millis(self.session.into()),
         };
     }
 
@@ -228,7 +228,7 @@ impl PomodoroTimer {
         }
 
         let completed = self.session;
-        let duration_seconds = self.config.duration_seconds(completed);
+        let duration_seconds = self.config.duration_seconds(completed.into());
         self.advance_session(true);
 
         Some(TimerEvent::SessionCompleted {
@@ -253,7 +253,7 @@ impl PomodoroTimer {
             });
         }
 
-        let expected_maximum = self.config.duration_millis(self.session);
+        let expected_maximum = self.config.duration_millis(self.session.into());
         match self.state {
             TimerState::Idle { remaining_ms } | TimerState::Paused { remaining_ms }
                 if remaining_ms == 0 || remaining_ms > expected_maximum =>
@@ -287,7 +287,7 @@ impl PomodoroTimer {
             }
         };
         self.state = TimerState::Idle {
-            remaining_ms: self.config.duration_millis(self.session),
+            remaining_ms: self.config.duration_millis(self.session.into()),
         };
     }
 }

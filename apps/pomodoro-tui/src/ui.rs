@@ -1,4 +1,4 @@
-use pomodoro_core::{SessionKind, TimerStatus};
+use pomodoro_core::legacy::{SessionKind, TimerStatus};
 use pomodoro_platform::local_date_at;
 use ratatui::{
     Frame,
@@ -68,7 +68,7 @@ fn draw_timer(frame: &mut Frame<'_>, app: &App, now_ms: u64, area: Rect) {
 
 fn draw_progress(frame: &mut Frame<'_>, app: &App, now_ms: u64, area: Rect) {
     let timer = &app.state().timer;
-    let total_ms = timer.config().duration_seconds(timer.session()) * 1_000;
+    let total_ms = timer.config().duration_seconds(timer.session().into()) * 1_000;
     let remaining_ms = timer.remaining_millis(now_ms).min(total_ms);
     let elapsed_percent = (total_ms - remaining_ms).saturating_mul(100) / total_ms;
     let gauge = Gauge::default()

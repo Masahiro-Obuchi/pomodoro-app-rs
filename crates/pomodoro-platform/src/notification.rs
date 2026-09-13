@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, io, process::Command};
 
-use pomodoro_core::SessionKind;
+use pomodoro_core::legacy::SessionKind;
 
 /// Desktop notifications delivered through Linux `notify-send`.
 #[derive(Debug, Default, Clone, Copy)]
