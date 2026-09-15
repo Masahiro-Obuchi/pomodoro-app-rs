@@ -666,6 +666,76 @@ fn settings_change_only_in_ready_and_do_not_rewrite_history() {
 }
 
 #[test]
+fn from_parts_requires_active_duration_to_match_snapshot_settings() {
+    for kind in [
+        SessionKind::Focus,
+        SessionKind::ShortBreak,
+        SessionKind::LongBreak,
+    ] {
+        for paused in [false, true] {
+            let mut state = ready_for(kind);
+            apply(&mut state, Command::Start(kind), 30_000);
+            observe(&mut state, 30_000, 31_000);
+            if paused {
+                let id = active(&state).0.id;
+                apply(&mut state, Command::Pause(id), 31_000);
+            }
+            assert_eq!(restored(&state), state);
+
+            let expected_ms = state.snapshot().settings.duration_millis(kind);
+            for duration_ms in [expected_ms - 1_000, expected_ms + 1_000] {
+                let mut snapshot = state.snapshot().clone();
+                let ProgressState::Active { session, .. } = &mut snapshot.state else {
+                    unreachable!();
+                };
+                session.planned_duration_ms = duration_ms;
+
+                let loaded = DomainState::from_parts(
+                    snapshot,
+                    state.history().clone(),
+                    state.id_allocators().clone(),
+                );
+                assert_eq!(
+                    loaded.err(),
+                    Some(DomainError::InvalidState("active session duration")),
+                    "{kind:?}, paused={paused}, duration_ms={duration_ms}",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn from_parts_preserves_historical_durations_after_settings_change() {
+    for kind in [
+        SessionKind::Focus,
+        SessionKind::ShortBreak,
+        SessionKind::LongBreak,
+    ] {
+        let mut state = ready_for(kind);
+        let duration_ms = state.snapshot().settings.duration_millis(kind);
+        apply(&mut state, Command::Start(kind), 30_000);
+        advance(&mut state, 30_000, duration_ms);
+        let history = state.history().clone();
+
+        let settings = TimerConfig::new(11, 6, 21, 2).unwrap();
+        let at = 30_000 + duration_ms;
+        apply(&mut state, Command::Configure(settings), at);
+        assert_ne!(duration_ms, settings.duration_millis(kind));
+        assert_eq!(restored(&state), state);
+
+        let next_kind = ready_kind(&state);
+        apply(&mut state, Command::Start(next_kind), at);
+        assert_eq!(
+            active(&state).0.planned_duration_ms,
+            settings.duration_millis(next_kind),
+        );
+        assert_eq!(state.history(), &history);
+        assert_eq!(restored(&state), state);
+    }
+}
+
+#[test]
 fn invalid_commands_and_missing_observation_do_not_allocate_ids_or_emit_events() {
     let mut state = state();
     for command in [

@@ -46,6 +46,12 @@ impl DomainState {
                 session.end.is_none() && session.elapsed_ms < session.planned_duration_ms,
                 "ended active session",
             )?;
+            // Settings cannot change while active. Historical sessions keep the
+            // duration captured at their start, even after settings change.
+            ensure(
+                session.planned_duration_ms == self.snapshot.settings.duration_millis(session.kind),
+                "active session duration",
+            )?;
             ensure(
                 sessions.insert(session.id, session).is_none(),
                 "duplicate active session",
