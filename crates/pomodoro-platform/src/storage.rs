@@ -5,7 +5,10 @@ use std::{
 };
 
 use directories::BaseDirs;
-use pomodoro_core::{History, PomodoroTimer, TimerConfig};
+use pomodoro_core::{
+    TimerConfig,
+    legacy::{History, PomodoroTimer},
+};
 use serde::{Deserialize, Serialize};
 
 const APPLICATION_DIRECTORY: &str = "pomodoro-app-rs";
@@ -125,8 +128,8 @@ pub enum StorageError {
     InvalidStoragePath,
     Io(io::Error),
     InvalidJson(serde_json::Error),
-    InvalidTimer(pomodoro_core::TimerError),
-    InvalidHistory(pomodoro_core::HistoryError),
+    InvalidTimer(pomodoro_core::legacy::TimerError),
+    InvalidHistory(pomodoro_core::legacy::HistoryError),
 }
 
 impl fmt::Display for StorageError {
