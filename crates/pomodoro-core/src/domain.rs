@@ -624,18 +624,25 @@ impl DomainState {
         if !matches!(self.snapshot.state, ProgressState::Active { .. }) {
             return Ok(());
         }
-        let classification = if let TimerState::Running { run } = self.active()?.1 {
-            if run.last_confirmed_at == observation.previous_at {
-                observation.classify()
-            } else {
-                Err((
+        // Even a consistent pair can predate the interruption or a lifecycle
+        // event. Keep that evidence before ignoring an interrupted timer's tick.
+        self.mark_clock_uncertainty(observation.at);
+        let mut classification = observation.classify();
+        if let TimerState::Running { run } = self.active()?.1 {
+            if observation.at < run.last_confirmed_at {
+                classification = Err((
+                    GapReason::ClockAnomaly,
+                    Some(TimeUncertainty::ClockMovedBackward),
+                ));
+            } else if run.last_confirmed_at != observation.previous_at && classification.is_ok() {
+                // Preserve pair-level anomalies, but never credit a healthy pair
+                // that is not linked to the last confirmed observation.
+                classification = Err((
                     GapReason::ObservationDiscontinuity,
                     Some(TimeUncertainty::InsufficientClockEvidence),
-                ))
+                ));
             }
-        } else {
-            observation.classify()
-        };
+        }
         let elapsed = match classification {
             Ok(elapsed) => elapsed,
             Err((reason, uncertainty)) => {

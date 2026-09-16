@@ -365,6 +365,124 @@ fn backward_clock_on_restore_marks_the_existing_distraction_unknown() {
     ));
 }
 
+#[test]
+fn interrupted_observation_checks_recorded_times_even_when_the_pair_is_consistent() {
+    for kind in [SessionKind::Focus, SessionKind::QuickStart] {
+        for prior_lifecycle_event in [false, true] {
+            let mut state = state();
+            apply(&mut state, Command::Start(kind), 0);
+            let id = active(&state).0.id;
+            observe(&mut state, 0, 1_000);
+            apply(&mut state, Command::Distraction(id), 1_000);
+            if prior_lifecycle_event {
+                apply(&mut state, Command::CloseApp, 2_000);
+                apply(&mut state, Command::RestoreApp, 3_000);
+            }
+            let original_id = interruption(&state).id;
+            let events = state.history().events.clone();
+            let to = if prior_lifecycle_event { 2_500 } else { 500 };
+            observe(&mut state, to - 100, to);
+            assert_eq!(interruption(&state).id, original_id);
+            assert_eq!(interruption(&state).kind, InterruptionKind::Distraction);
+            assert_eq!(
+                interruption(&state).time_uncertainty,
+                Some(TimeUncertainty::ClockMovedBackward)
+            );
+            assert_eq!(state.history().events, events);
+            assert_eq!(active(&state).0.elapsed_ms, 1_000);
+            // The evidence must survive a snapshot round trip before Return.
+            state = restored(&state);
+            apply(&mut state, Command::Return(id), 4_000);
+            assert!(matches!(
+                state.history().events.last().unwrap().payload,
+                EventKind::InterruptionEnded {
+                    end: InterruptionEnd {
+                        outcome: InterruptionOutcome::Returned,
+                        duration: MeasuredDuration::Unknown {
+                            reason: TimeUncertainty::ClockMovedBackward
+                        },
+                        ..
+                    },
+                    ..
+                }
+            ));
+            assert_eq!(state.reflection().unwrap().returns, 1);
+        }
+    }
+}
+
+#[test]
+fn unlinked_running_observations_preserve_the_strongest_clock_evidence() {
+    for (previous, at, monotonic, reason, uncertainty) in [
+        // Internally consistent, but earlier than the last confirmed timestamp.
+        (
+            400,
+            500,
+            Some(100),
+            GapReason::ClockAnomaly,
+            Some(TimeUncertainty::ClockMovedBackward),
+        ),
+        // Pair-level rollback even though its end is later than the snapshot.
+        (
+            2_000,
+            1_500,
+            Some(100),
+            GapReason::ClockAnomaly,
+            Some(TimeUncertainty::ClockMovedBackward),
+        ),
+        (
+            2_000,
+            5_000,
+            Some(100),
+            GapReason::ClockAnomaly,
+            Some(TimeUncertainty::ClockDiscontinuity),
+        ),
+        (
+            2_000,
+            2_100,
+            None,
+            GapReason::ObservationDiscontinuity,
+            Some(TimeUncertainty::InsufficientClockEvidence),
+        ),
+        (
+            2_000,
+            8_000,
+            Some(6_000),
+            GapReason::ObservationDiscontinuity,
+            None,
+        ),
+        // A healthy pair still cannot credit time across a missing link.
+        (
+            2_000,
+            2_100,
+            Some(100),
+            GapReason::ObservationDiscontinuity,
+            Some(TimeUncertainty::InsufficientClockEvidence),
+        ),
+    ] {
+        let mut state = state();
+        apply(&mut state, Command::Start(SessionKind::Focus), 0);
+        observe(&mut state, 0, 1_000);
+        state
+            .observe(Observation {
+                previous_at: Timestamp(previous),
+                at: Timestamp(at),
+                monotonic_elapsed_ms: monotonic,
+            })
+            .unwrap();
+        assert_eq!(interruption(&state).kind, InterruptionKind::ObservationGap);
+        assert_eq!(interruption(&state).started_at, Timestamp(1_000));
+        assert_eq!(interruption(&state).recorded_at, Timestamp(at));
+        assert_eq!(interruption(&state).time_uncertainty, uncertainty);
+        assert_eq!(active(&state).0.elapsed_ms, 1_000);
+        assert!(matches!(
+            state.history().events[0].payload,
+            EventKind::ObservationGapDetected { reason: actual, .. } if actual == reason
+        ));
+        assert_eq!(restored(&state), state);
+    }
+}
+
 fn ready_for(kind: SessionKind) -> DomainState {
     let mut state = state();
     match kind {
