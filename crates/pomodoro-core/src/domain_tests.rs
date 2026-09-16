@@ -965,6 +965,173 @@ fn cross_object_validation_rejects_corruption_without_replay_or_repair() {
     assert_eq!(restored(&original), original);
 }
 
+fn reject_inserted_event(
+    state: &DomainState,
+    index: usize,
+    session_id: SessionId,
+    payload: EventKind,
+) {
+    let mut bad = state.clone();
+    let at = Timestamp(200_000);
+    bad.history.events.insert(
+        index,
+        HistoryEvent {
+            sequence: u64::try_from(index).unwrap() + 1,
+            session_id,
+            effective_at: at,
+            recorded_at: at,
+            payload,
+        },
+    );
+    for event in &mut bad.history.events[index + 1..] {
+        event.sequence += 1;
+    }
+    bad.ids.next_event_sequence += 1;
+    assert!(DomainState::from_parts(bad.snapshot, bad.history, bad.ids).is_err());
+}
+
+fn gap_event() -> EventKind {
+    EventKind::ObservationGapDetected {
+        last_confirmed_at: Timestamp(200_000),
+        detected_at: Timestamp(200_000),
+        reason: GapReason::ObservationDiscontinuity,
+    }
+}
+
+#[test]
+fn history_rejects_lifecycle_and_gap_events_after_session_end() {
+    for kind in [
+        SessionKind::Focus,
+        SessionKind::QuickStart,
+        SessionKind::ShortBreak,
+        SessionKind::LongBreak,
+    ] {
+        for outcome in [
+            SessionOutcome::Completed,
+            SessionOutcome::Cancelled,
+            SessionOutcome::Reset,
+            SessionOutcome::Skipped,
+        ] {
+            for interrupted in [false, true] {
+                if interrupted && outcome == SessionOutcome::Completed {
+                    continue;
+                }
+                let mut state = ready_for(kind);
+                apply(&mut state, Command::Start(kind), 30_000);
+                let id = active(&state).0.id;
+                if outcome == SessionOutcome::Completed {
+                    let duration = active(&state).0.planned_duration_ms;
+                    advance(&mut state, 30_000, duration);
+                } else {
+                    observe(&mut state, 30_000, 31_000);
+                    if interrupted {
+                        apply(&mut state, Command::Pause(id), 31_000);
+                    }
+                    apply(
+                        &mut state,
+                        Command::End {
+                            session_id: id,
+                            outcome,
+                        },
+                        31_000,
+                    );
+                }
+                assert_eq!(restored(&state), state);
+                let index = state.history().events.len();
+                reject_inserted_event(&state, index, id, gap_event());
+                // Completed Quick Start still permits lifecycle events while awaiting a decision.
+                if kind != SessionKind::QuickStart || outcome != SessionOutcome::Completed {
+                    reject_inserted_event(&state, index, id, EventKind::AppClosing);
+                    reject_inserted_event(&state, index, id, EventKind::AppRestored);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn lifecycle_events_require_the_running_session_to_have_been_interrupted() {
+    let mut state = state();
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+    let id = active(&state).0.id;
+    observe(&mut state, 0, 1_000);
+    apply(&mut state, Command::Pause(id), 1_000);
+    // Lifecycle events are emitted after both RunIntervalRecorded and InterruptionStarted.
+    for index in [0, 1] {
+        reject_inserted_event(&state, index, id, EventKind::AppClosing);
+        reject_inserted_event(&state, index, id, EventKind::AppRestored);
+    }
+}
+
+#[test]
+fn quick_start_lifecycle_events_are_valid_only_before_the_decision() {
+    for choice in [QuickStartChoice::Finish, QuickStartChoice::Continue] {
+        let mut state = state();
+        apply(&mut state, Command::Start(SessionKind::QuickStart), 0);
+        let id = active(&state).0.id;
+        advance(&mut state, 0, 120_000);
+        apply(&mut state, Command::CloseApp, 121_000);
+        apply(&mut state, Command::RestoreApp, 122_000);
+        assert_eq!(restored(&state), state);
+        apply(
+            &mut state,
+            Command::DecideQuickStart {
+                session_id: id,
+                choice,
+            },
+            123_000,
+        );
+        // Past lifecycle events remain valid in both Ready and a different Active session.
+        assert_eq!(restored(&state), state);
+        let index = state.history().events.len();
+        reject_inserted_event(&state, index, id, EventKind::AppClosing);
+        reject_inserted_event(&state, index, id, EventKind::AppRestored);
+        reject_inserted_event(&state, index, id, gap_event());
+    }
+}
+
+#[test]
+fn ended_sessions_keep_valid_gap_and_lifecycle_events_from_their_interruptions() {
+    for kind in [
+        InterruptionKind::Pause,
+        InterruptionKind::Distraction,
+        InterruptionKind::AppExit,
+        InterruptionKind::ObservationGap,
+    ] {
+        let mut state = state();
+        apply(&mut state, Command::Start(SessionKind::Focus), 0);
+        let id = active(&state).0.id;
+        observe(&mut state, 0, 1_000);
+        let command = match kind {
+            InterruptionKind::Pause => Command::Pause(id),
+            InterruptionKind::Distraction => Command::Distraction(id),
+            InterruptionKind::AppExit => Command::CloseApp,
+            InterruptionKind::ObservationGap => Command::RestoreApp,
+        };
+        apply(&mut state, command, 1_000);
+        let interruption_id = interruption(&state).id;
+        observe(&mut state, 1_000, 10_000);
+        assert_eq!(interruption(&state).id, interruption_id);
+        assert_eq!(interruption(&state).kind, kind);
+        assert_eq!(restored(&state), state);
+        apply(&mut state, Command::CloseApp, 10_000);
+        // Wall-clock order cannot be used as a substitute for event sequence.
+        apply(&mut state, Command::RestoreApp, 9_000);
+        let command = if kind == InterruptionKind::Distraction {
+            Command::Return(id)
+        } else {
+            Command::Resume(id)
+        };
+        apply(&mut state, command, 12_000);
+        assert_eq!(restored(&state), state);
+        advance(&mut state, 12_000, 9_000);
+        assert_eq!(ready_kind(&state), SessionKind::ShortBreak);
+        assert_eq!(restored(&state), state);
+        apply(&mut state, Command::Start(SessionKind::ShortBreak), 21_000);
+        assert_eq!(restored(&state), state);
+    }
+}
+
 #[test]
 fn candidate_application_does_not_mean_the_committed_state_has_changed() {
     let committed = state();
@@ -1021,6 +1188,11 @@ fn validation_rejects_missing_or_mismatched_quick_start_decisions() {
     let mut bad = state.clone();
     bad.history.events.pop();
     bad.ids.next_event_sequence -= 1;
+    assert!(bad.validate().is_err());
+    let mut bad = state.clone();
+    bad.history.events.swap(0, 1);
+    bad.history.events[0].sequence = 1;
+    bad.history.events[1].sequence = 2;
     assert!(bad.validate().is_err());
     let mut bad = state;
     if let ProgressState::Active { session, .. } = &mut bad.snapshot.state {

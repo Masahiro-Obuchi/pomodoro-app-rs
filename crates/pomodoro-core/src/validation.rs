@@ -201,6 +201,15 @@ impl<'a> SessionFacts<'a> {
             ended_by_interruption: false,
         }
     }
+
+    // This describes the position in the event sequence, not the final snapshot.
+    // The decision map separately records whether this wait has already ended.
+    fn awaiting_quick_start_decision(&self) -> bool {
+        is_completed_quick_start(self.session)
+            && self.run_closed
+            && self.open.is_none()
+            && self.credited_ms == self.session.planned_duration_ms
+    }
 }
 
 fn validate_event(
@@ -286,7 +295,10 @@ fn validate_event(
             facts.run_start = end.ended_at;
         }
         EventKind::QuickStartDecisionMade { decision } => {
-            ensure(is_completed_quick_start(facts.session), "decision source")?;
+            ensure(
+                facts.awaiting_quick_start_decision(),
+                "decision before completion",
+            )?;
             ensure(
                 decisions.insert(event.session_id, *decision).is_none(),
                 "duplicate quick start decision",
@@ -296,15 +308,42 @@ fn validate_event(
             last_confirmed_at,
             detected_at,
             ..
-        } => {
-            ensure(
-                *last_confirmed_at == event.effective_at && *detected_at == event.recorded_at,
-                "gap timestamps",
-            )?;
+        } => validate_observation_gap(facts, event, *last_confirmed_at, *detected_at)?,
+        EventKind::AppClosing | EventKind::AppRestored => {
+            validate_lifecycle_event(facts, decisions)?;
         }
-        EventKind::AppClosing | EventKind::AppRestored => {}
     }
     Ok(())
+}
+
+fn validate_observation_gap(
+    facts: &SessionFacts<'_>,
+    event: &HistoryEvent,
+    last_confirmed_at: Timestamp,
+    detected_at: Timestamp,
+) -> Result<(), DomainError> {
+    ensure(
+        !facts.run_closed || facts.open.is_some(),
+        "gap outside active session",
+    )?;
+    ensure(
+        last_confirmed_at == event.effective_at && detected_at == event.recorded_at,
+        "gap timestamps",
+    )
+}
+
+fn validate_lifecycle_event(
+    facts: &SessionFacts<'_>,
+    decisions: &BTreeMap<SessionId, QuickStartDecision>,
+) -> Result<(), DomainError> {
+    // Lifecycle commands interrupt a running session before emitting these
+    // facts. Completed Quick Starts remain eligible until a decision.
+    ensure(
+        facts.open.is_some()
+            || (facts.awaiting_quick_start_decision()
+                && !decisions.contains_key(&facts.session.id)),
+        "lifecycle outside interruption or quick start decision wait",
+    )
 }
 
 fn validate_interruption_end(
