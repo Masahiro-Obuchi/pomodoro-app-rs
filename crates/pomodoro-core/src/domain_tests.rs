@@ -68,7 +68,7 @@ fn restored(state: &DomainState) -> DomainState {
 
 #[test]
 fn current_task_is_optional_normalized_and_single_line() {
-    for empty in ["", " ", "\t", "\n"] {
+    for empty in ["", " ", "\t", "\n", "\u{000B}", "\u{000C}"] {
         assert_eq!(CurrentTask::parse(empty).unwrap(), None);
     }
     assert_eq!(
@@ -78,7 +78,15 @@ fn current_task_is_optional_normalized_and_single_line() {
             .as_str(),
         "read chapter 1"
     );
-    for invalid in ["first\nsecond", "first\rsecond", "first\u{2028}second"] {
+    for invalid in [
+        "first\nsecond",
+        "first\rsecond",
+        "first\u{000B}second",
+        "first\u{000C}second",
+        "first\u{0085}second",
+        "first\u{2028}second",
+        "first\u{2029}second",
+    ] {
         assert_eq!(CurrentTask::parse(invalid), Err(DomainError::InvalidTask));
     }
     let mut state = state();

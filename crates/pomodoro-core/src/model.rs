@@ -50,7 +50,9 @@ impl CurrentTask {
         if input.trim().is_empty() {
             return Ok(None);
         }
-        if input.contains(['\r', '\n', '\u{0085}', '\u{2028}', '\u{2029}']) {
+        if input.contains([
+            '\r', '\n', '\u{000B}', '\u{000C}', '\u{0085}', '\u{2028}', '\u{2029}',
+        ]) {
             return Err(DomainError::InvalidTask);
         }
         let value = input.trim();
