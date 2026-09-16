@@ -80,6 +80,7 @@ impl TimerConfig {
     pub const fn duration_seconds(&self, session: SessionKind) -> u64 {
         match session {
             SessionKind::Focus => self.focus_seconds,
+            SessionKind::QuickStart => 120,
             SessionKind::ShortBreak => self.short_break_seconds,
             SessionKind::LongBreak => self.long_break_seconds,
         }

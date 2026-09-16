@@ -1,5 +1,6 @@
 use crossterm::event::KeyCode;
-use pomodoro_core::{SessionKind, TimerConfig, TimerError, TimerEvent, TimerStatus};
+use pomodoro_core::TimerConfig;
+use pomodoro_core::legacy::{SessionKind, TimerError, TimerEvent, TimerStatus};
 use pomodoro_platform::{NativeStorage, NotifySendNotifier, PersistedState, local_date_at};
 
 const DURATION_STEP_SECONDS: u64 = 60;
@@ -334,9 +335,7 @@ const fn completion_message(session: SessionKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::atomic::{AtomicU64, Ordering},
-    };
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use pomodoro_core::TimerConfig;
 
