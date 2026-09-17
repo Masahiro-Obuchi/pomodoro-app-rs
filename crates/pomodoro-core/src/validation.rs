@@ -282,7 +282,9 @@ fn validate_event(
                 .take()
                 .ok_or(DomainError::InvalidState("unpaired interruption end"))?;
             ensure(
-                *interruption_id == open.id && end.ended_at == event.effective_at,
+                *interruption_id == open.id
+                    && end.ended_at == event.effective_at
+                    && event.effective_at == event.recorded_at,
                 "interruption end reference",
             )?;
             validate_interruption_end(&open, *end, facts.session)?;

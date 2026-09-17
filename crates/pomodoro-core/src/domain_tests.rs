@@ -447,6 +447,29 @@ fn from_parts_rejects_known_duration_when_return_predates_the_last_event() {
 }
 
 #[test]
+fn from_parts_rejects_a_backdated_interruption_end_with_a_later_recorded_time() {
+    let mut state = state();
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+    let id = active(&state).0.id;
+    observe(&mut state, 0, 1_000);
+    apply(&mut state, Command::Distraction(id), 1_000);
+    apply(&mut state, Command::CloseApp, 3_000);
+    apply(&mut state, Command::Return(id), 2_000);
+
+    let mut bad = state.clone();
+    let event = bad.history.events.last_mut().unwrap();
+    assert_eq!(event.effective_at, Timestamp(2_000));
+    event.recorded_at = Timestamp(4_000);
+    let EventKind::InterruptionEnded { end, .. } = &mut event.payload else {
+        panic!("expected interruption end")
+    };
+    assert!(matches!(end.duration, MeasuredDuration::Unknown { .. }));
+    end.duration = MeasuredDuration::Known { elapsed_ms: 1_000 };
+
+    assert!(DomainState::from_parts(bad.snapshot, bad.history, bad.ids).is_err());
+}
+
+#[test]
 fn from_parts_rejects_known_duration_after_a_backward_observation_pair() {
     let mut state = state();
     apply(&mut state, Command::Start(SessionKind::Focus), 0);
