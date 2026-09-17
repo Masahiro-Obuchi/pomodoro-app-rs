@@ -2,7 +2,7 @@
 
 採用日：2026-09-12
 
-更新日：2026-09-14
+更新日：2026-09-17
 
 この文書は [Product Spec](PRODUCT_SPEC.md) をドメイン上の状態・データ・制約として定義する。今後の実装の設計基準であり、現在のコードがすべて実装済みであることを意味しない。型名・フィールド名は概念上の名称であり、保存JSONの表現やRustの公開APIとは区別する。
 
@@ -94,6 +94,7 @@ Observation Gapは自然完了判定より先に処理する。保存された�
 - `0 <= elapsed_ms <= planned_duration_ms`。
 - Completedなら`elapsed_ms == planned_duration_ms`。
 - 開始後に種別・設定時間・Current Taskを変更しない。
+- Activeの設定時間は、その種別に対する現在のSettingsの時間と一致する。設定変更をReadyに限定するためであり、終了済みSessionに現在のSettingsとの一致は要求しない。
 - BreakにはCurrent TaskとQuick Start継続元を持たせない。
 - 同じSessionを二度終了させない。
 
@@ -212,6 +213,10 @@ Observation Gapでは開始境界と記録日時が異なり得る。最後の�
 
 Return時には、アプリ終了中も含めて申告からの経過時間を扱う。時計異常などで算出できない場合もReturnedという結果は保持し、時間だけを不明とする。
 
+中断の経過時間をKnownとして保持できるのは、開始・終了の差が記録値と一致し、その中断について残っている時計異常の証拠と矛盾しない場合だけとする。途中で時計が戻った証拠があれば、終了時刻が開始時刻以降へ戻っていてもKnownへ戻さない。開いた中断では時刻の不確かさを、閉じた中断では終了情報のUnknown理由を保持する。
+
+読込検証でも、当該中断が開いていた期間のevent順序・記録日時など、保存済みの証拠とKnown/Unknownの整合性を確認する。全履歴の日時が昇順であることは要求せず、証拠のない異常を推測したり、Unknownを日時の差だけでKnownへ補正したりしない。
+
 ## 7. Current TaskとQuick Startの関連
 
 ### 7.1 Current Task
@@ -221,7 +226,7 @@ Return時には、アプリ終了中も含めて申告からの経過時間を�
 - Sessionでは開始時の値を保持する。
 - Readyでは編集用の下書きを保持する。
 - 空白だけの入力は未入力とする。
-- 値がある場合は空でなく、改行を含まない。
+- 値がある入力は前後の空白を除去して保持し、空でなく、行区切り（CR・LF・VT・FF・NEL・LS・PS）を含まない。
 - Session開始後は値を変更しない。
 - Breakでは保持しない。
 - Task ID、完了状態、階層、期限、優先度、プロジェクトは持たせない。
@@ -322,11 +327,23 @@ HistoryEventは共通情報を持つ`struct`、EventKindは種類別のデータ
 
 Sessionの開始日時・終了日時・結果はSession本体を正本とし、SessionStarted／SessionEnded eventには複製しない。AppClosingとAppRestoredは独立したenum variantであり、一つの曖昧なvariantにはまとめない。アプリ起動をまたいだ事実はこれらのeventから確認し、Interruptionにcrossed_app_boundaryを重複保持しない。ObservationGapDetectedは、すでに中断中でも観測空白を記録するために残す。
 
+#### eventの位置とライフサイクルの整合性
+
+- 検証はeventの通し順で行う。現在のsnapshotがReadyであっても、過去のSessionの正当な実行・中断中のeventは保持できる。
+- AppClosing／AppRestoredは、中断中または自然完了したQuick Startの未選択期間にだけ記録する。Runningを対象にした終了・復元では、先に実行区間を閉じて中断を作り、その後にこのeventを記録する。
+- QuickStartDecisionMadeは、Quick Startの全時間の区間確定後に一度だけ許可する。選択後の元Quick StartへAppClosing／AppRestoredを追加しない。
+- ObservationGapDetectedは、そのeventの位置で実行中または中断中だったSessionを対象とする。開始待ち、終了後、Quick Startの継続選択待ちには追加しない。
+- 終了済みSessionであるという理由で過去のeventを一律に拒否せず、逆に参照先が存在するという理由だけで終了後のeventを許可しない。
+
+これは保存された事実とsnapshotの整合性検証であり、event replayによる現在状態の再構築ではない。
+
 ### 10.3 実行区間の確定
 
 Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Observation Gapで実行区間を閉じる際にRunIntervalRecordedを作る。
 
 通常のtickではsnapshotの累積計時時間と最終確認情報を更新し、tickごとのeventは作らない。チェックポイントでは、開いている区間を含むsnapshotを保存する。
+
+中断中の観測では、計時済み時間もevent数も変わらず、開いたInterruptionの時刻の不確かさだけが変わる場合がある。これもsnapshotの変更であり、保存対象から落とさない。変更の有無を時間やevent数だけで判断しない。
 
 異常終了後は保存済みsnapshotの情報だけで、最後の確認時点までの区間を閉じられるようにする。過去eventの再生は不要とする。
 
@@ -422,6 +439,8 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 - 全体schema version、保存世代、対応形式の判定、ファイルの保護は保存層で扱う。
 
 保存待ちはアプリケーション側の状態であり、TimerStateやInterruptionKindに追加しない。保存失敗中に観測を保留した区間は、保存回復後に通常のObservation Gapとしてコアへ渡し、推測して加算しない。
+
+この区間は内部ポリシーの時間閾値未満でも計時に含めない。保存回復はアプリの再起動ではないため、AppRestoredを代用して記録しない。
 
 ### 12.2 初期状態
 
