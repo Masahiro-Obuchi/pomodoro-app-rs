@@ -373,6 +373,173 @@ fn backward_clock_on_restore_marks_the_existing_distraction_unknown() {
     ));
 }
 
+fn reject_known_interruption_duration(state: &DomainState, elapsed_ms: u64) {
+    assert_eq!(restored(state), *state);
+    let mut bad = state.clone();
+    let EventKind::InterruptionEnded { end, .. } =
+        &mut bad.history.events.last_mut().unwrap().payload
+    else {
+        panic!("expected interruption end")
+    };
+    assert!(matches!(end.duration, MeasuredDuration::Unknown { .. }));
+    end.duration = MeasuredDuration::Known { elapsed_ms };
+    assert!(DomainState::from_parts(bad.snapshot, bad.history, bad.ids).is_err());
+}
+
+#[test]
+fn from_parts_rejects_known_duration_after_lifecycle_clock_rollback() {
+    for kind in [SessionKind::Focus, SessionKind::QuickStart] {
+        for interruption_kind in [
+            InterruptionKind::Pause,
+            InterruptionKind::Distraction,
+            InterruptionKind::AppExit,
+            InterruptionKind::ObservationGap,
+        ] {
+            for outcome in [
+                None,
+                Some(SessionOutcome::Cancelled),
+                Some(SessionOutcome::Reset),
+                Some(SessionOutcome::Skipped),
+            ] {
+                let mut state = state();
+                apply(&mut state, Command::Start(kind), 0);
+                let id = active(&state).0.id;
+                observe(&mut state, 0, 1_000);
+                let command = match interruption_kind {
+                    InterruptionKind::Pause => Command::Pause(id),
+                    InterruptionKind::Distraction => Command::Distraction(id),
+                    InterruptionKind::AppExit => Command::CloseApp,
+                    InterruptionKind::ObservationGap => Command::RestoreApp,
+                };
+                apply(&mut state, command, 1_000);
+                apply(&mut state, Command::CloseApp, 2_000);
+                state = restored(&state);
+                apply(&mut state, Command::RestoreApp, 1_500);
+                let command = match outcome {
+                    Some(outcome) => Command::End {
+                        session_id: id,
+                        outcome,
+                    },
+                    None if interruption_kind == InterruptionKind::Distraction => {
+                        Command::Return(id)
+                    }
+                    None => Command::Resume(id),
+                };
+                apply(&mut state, command, 3_000);
+                // The endpoints have recovered, but the intervening rollback remains evidence.
+                reject_known_interruption_duration(&state, 2_000);
+            }
+        }
+    }
+}
+
+#[test]
+fn from_parts_rejects_known_duration_when_return_predates_the_last_event() {
+    let mut state = state();
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+    let id = active(&state).0.id;
+    observe(&mut state, 0, 1_000);
+    apply(&mut state, Command::Distraction(id), 1_000);
+    apply(&mut state, Command::CloseApp, 3_000);
+    apply(&mut state, Command::RestoreApp, 4_000);
+    apply(&mut state, Command::Return(id), 2_000);
+    reject_known_interruption_duration(&state, 1_000);
+}
+
+#[test]
+fn from_parts_rejects_known_duration_after_a_backward_observation_pair() {
+    let mut state = state();
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+    let id = active(&state).0.id;
+    observe(&mut state, 0, 1_000);
+    apply(&mut state, Command::Distraction(id), 1_000);
+    state
+        .observe(Observation {
+            previous_at: Timestamp(3_000),
+            at: Timestamp(2_500),
+            monotonic_elapsed_ms: Some(500),
+        })
+        .unwrap();
+    apply(&mut state, Command::Return(id), 4_000);
+    // Event recording times alone are increasing; the gap's endpoints prove the rollback.
+    reject_known_interruption_duration(&state, 3_000);
+}
+
+#[test]
+fn from_parts_rejects_known_duration_when_gap_detection_predates_its_boundary() {
+    let mut state = state();
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+    let id = active(&state).0.id;
+    observe(&mut state, 0, 1_000);
+    apply(&mut state, Command::RestoreApp, 500);
+    apply(&mut state, Command::Resume(id), 2_000);
+    reject_known_interruption_duration(&state, 1_000);
+}
+
+#[test]
+fn from_parts_rejects_lost_clock_evidence_in_an_open_interruption() {
+    let mut state = state();
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+    let id = active(&state).0.id;
+    observe(&mut state, 0, 1_000);
+    apply(&mut state, Command::Distraction(id), 1_000);
+    apply(&mut state, Command::CloseApp, 2_000);
+    apply(&mut state, Command::RestoreApp, 1_500);
+    assert_eq!(restored(&state), state);
+    let ProgressState::Active {
+        timer: TimerState::Interrupted { interruption },
+        ..
+    } = &mut state.snapshot.state
+    else {
+        panic!("expected interruption")
+    };
+    interruption.time_uncertainty = None;
+    assert!(DomainState::from_parts(state.snapshot, state.history, state.ids).is_err());
+}
+
+#[test]
+fn from_parts_keeps_clock_evidence_scoped_to_each_interruption() {
+    for new_session in [false, true] {
+        let mut state = state();
+        apply(&mut state, Command::Start(SessionKind::Focus), 0);
+        let id = active(&state).0.id;
+        observe(&mut state, 0, 1_000);
+        apply(&mut state, Command::Pause(id), 1_000);
+        apply(&mut state, Command::CloseApp, 4_000);
+        apply(&mut state, Command::RestoreApp, 1_500);
+        if new_session {
+            apply(
+                &mut state,
+                Command::End {
+                    session_id: id,
+                    outcome: SessionOutcome::Cancelled,
+                },
+                1_500,
+            );
+            apply(&mut state, Command::Start(SessionKind::Focus), 1_500);
+        } else {
+            apply(&mut state, Command::Resume(id), 1_500);
+        }
+        let id = active(&state).0.id;
+        observe(&mut state, 1_500, 2_000);
+        apply(&mut state, Command::Distraction(id), 2_000);
+        apply(&mut state, Command::CloseApp, 2_000);
+        apply(&mut state, Command::RestoreApp, 2_000);
+        apply(&mut state, Command::Return(id), 3_000);
+        assert!(matches!(
+            state.history().events.last().unwrap().payload,
+            EventKind::InterruptionEnded {
+                end: InterruptionEnd {
+                    duration: MeasuredDuration::Known { elapsed_ms: 1_000 },
+                    ..
+                },
+                ..
+            }
+        ));
+        assert_eq!(restored(&state), state);
+    }
+}
+
 #[test]
 fn interrupted_observation_checks_recorded_times_even_when_the_pair_is_consistent() {
     for kind in [SessionKind::Focus, SessionKind::QuickStart] {

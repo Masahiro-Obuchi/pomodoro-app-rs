@@ -75,6 +75,9 @@ impl DomainState {
             let facts = facts
                 .get_mut(&event.session_id)
                 .ok_or(DomainError::InvalidState("event session reference"))?;
+            if let Some(open) = &mut facts.open {
+                open.record_clock_evidence(event);
+            }
             validate_event(facts, event, &mut interruption_ids, &mut decisions)?;
         }
         ensure(self.ids.next_event_sequence == sequence, "event allocator")?;
@@ -177,6 +180,25 @@ struct OpenInterruption {
     kind: InterruptionKind,
     started_at: Timestamp,
     recorded_at: Timestamp,
+    last_recorded_at: Timestamp,
+    clock_moved_backward: bool,
+}
+
+impl OpenInterruption {
+    fn record_clock_evidence(&mut self, event: &HistoryEvent) {
+        // Only evidence within this interruption applies to its duration. A
+        // later timestamp cannot undo an earlier rollback.
+        self.clock_moved_backward |= event.recorded_at < self.last_recorded_at;
+        if let EventKind::ObservationGapDetected {
+            last_confirmed_at,
+            detected_at,
+            ..
+        } = &event.payload
+        {
+            self.clock_moved_backward |= detected_at < last_confirmed_at;
+        }
+        self.last_recorded_at = event.recorded_at;
+    }
 }
 
 struct SessionFacts<'a> {
@@ -274,6 +296,8 @@ fn validate_event(
                 kind: *interruption_kind,
                 started_at: event.effective_at,
                 recorded_at: event.recorded_at,
+                last_recorded_at: event.recorded_at,
+                clock_moved_backward: event.recorded_at < event.effective_at,
             });
         }
         EventKind::InterruptionEnded {
@@ -374,6 +398,7 @@ fn validate_interruption_end(
         }
     }
     if let MeasuredDuration::Known { elapsed_ms } = end.duration {
+        ensure(!open.clock_moved_backward, "interruption clock evidence")?;
         ensure(
             end.ended_at.0.checked_sub(open.started_at.0) == Some(elapsed_ms)
                 && end.ended_at >= open.recorded_at,
@@ -388,6 +413,7 @@ fn same_open(open: &OpenInterruption, interruption: &Interruption) -> bool {
         && open.kind == interruption.kind
         && open.started_at == interruption.started_at
         && open.recorded_at == interruption.recorded_at
+        && (!open.clock_moved_backward || interruption.time_uncertainty.is_some())
 }
 
 fn validate_accounting(
