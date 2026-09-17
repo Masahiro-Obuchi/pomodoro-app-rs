@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    DomainError, DomainState, EventKind, HistoryEvent, Interruption, InterruptionEnd,
+    DomainError, DomainState, EventKind, GapReason, HistoryEvent, Interruption, InterruptionEnd,
     InterruptionId, InterruptionKind, InterruptionOutcome, MeasuredDuration, ProgressState,
     QuickStartDecision, Session, SessionId, SessionKind, SessionOutcome, TimerState, Timestamp,
 };
@@ -181,21 +181,22 @@ struct OpenInterruption {
     started_at: Timestamp,
     recorded_at: Timestamp,
     last_recorded_at: Timestamp,
-    clock_moved_backward: bool,
+    clock_uncertain: bool,
 }
 
 impl OpenInterruption {
     fn record_clock_evidence(&mut self, event: &HistoryEvent) {
         // Only evidence within this interruption applies to its duration. A
-        // later timestamp cannot undo an earlier rollback.
-        self.clock_moved_backward |= event.recorded_at < self.last_recorded_at;
+        // later healthy timestamp cannot undo an earlier clock anomaly.
+        self.clock_uncertain |= event.recorded_at < self.last_recorded_at;
         if let EventKind::ObservationGapDetected {
             last_confirmed_at,
             detected_at,
-            ..
+            reason,
         } = &event.payload
         {
-            self.clock_moved_backward |= detected_at < last_confirmed_at;
+            self.clock_uncertain |=
+                detected_at < last_confirmed_at || *reason == GapReason::ClockAnomaly;
         }
         self.last_recorded_at = event.recorded_at;
     }
@@ -208,6 +209,7 @@ struct SessionFacts<'a> {
     run_start: Timestamp,
     run_end: Option<Timestamp>,
     open: Option<OpenInterruption>,
+    pending_gap_reason: Option<GapReason>,
     ended_by_interruption: bool,
 }
 
@@ -220,6 +222,7 @@ impl<'a> SessionFacts<'a> {
             run_start: session.started_at,
             run_end: None,
             open: None,
+            pending_gap_reason: None,
             ended_by_interruption: false,
         }
     }
@@ -269,37 +272,7 @@ fn validate_event(
         EventKind::InterruptionStarted {
             interruption_id,
             interruption_kind,
-        } => {
-            ensure(
-                *interruption_kind == InterruptionKind::ObservationGap
-                    || event.effective_at == event.recorded_at,
-                "manual interruption timestamps",
-            )?;
-            ensure(
-                facts.run_closed && facts.open.is_none() && !facts.ended_by_interruption,
-                "overlapping interruption",
-            )?;
-            ensure(
-                facts.run_end == Some(event.effective_at),
-                "interruption boundary",
-            )?;
-            ensure(
-                interruption_id.0 > 0 && ids.insert(*interruption_id),
-                "duplicate interruption ID",
-            )?;
-            ensure(
-                *interruption_kind != InterruptionKind::Distraction || facts.session.kind.is_work(),
-                "break distraction event",
-            )?;
-            facts.open = Some(OpenInterruption {
-                id: *interruption_id,
-                kind: *interruption_kind,
-                started_at: event.effective_at,
-                recorded_at: event.recorded_at,
-                last_recorded_at: event.recorded_at,
-                clock_moved_backward: event.recorded_at < event.effective_at,
-            });
-        }
+        } => validate_interruption_start(facts, event, *interruption_id, *interruption_kind, ids)?,
         EventKind::InterruptionEnded {
             interruption_id,
             end,
@@ -331,12 +304,75 @@ fn validate_event(
         EventKind::ObservationGapDetected {
             last_confirmed_at,
             detected_at,
-            ..
-        } => validate_observation_gap(facts, event, *last_confirmed_at, *detected_at)?,
+            reason,
+        } => {
+            validate_observation_gap(facts, event, *last_confirmed_at, *detected_at)?;
+            if facts.open.is_none() {
+                ensure(
+                    facts.pending_gap_reason.is_none(),
+                    "duplicate observation gap",
+                )?;
+                facts.pending_gap_reason = Some(*reason);
+            }
+        }
         EventKind::AppClosing | EventKind::AppRestored => {
             validate_lifecycle_event(facts, decisions)?;
         }
     }
+    Ok(())
+}
+
+fn validate_interruption_start(
+    facts: &mut SessionFacts<'_>,
+    event: &HistoryEvent,
+    interruption_id: InterruptionId,
+    interruption_kind: InterruptionKind,
+    ids: &mut BTreeSet<InterruptionId>,
+) -> Result<(), DomainError> {
+    let gap_reason = if interruption_kind == InterruptionKind::ObservationGap {
+        Some(
+            facts
+                .pending_gap_reason
+                .take()
+                .ok_or(DomainError::InvalidState("missing observation gap"))?,
+        )
+    } else {
+        ensure(
+            facts.pending_gap_reason.is_none(),
+            "unhandled observation gap",
+        )?;
+        None
+    };
+    ensure(
+        interruption_kind == InterruptionKind::ObservationGap
+            || event.effective_at == event.recorded_at,
+        "manual interruption timestamps",
+    )?;
+    ensure(
+        facts.run_closed && facts.open.is_none() && !facts.ended_by_interruption,
+        "overlapping interruption",
+    )?;
+    ensure(
+        facts.run_end == Some(event.effective_at),
+        "interruption boundary",
+    )?;
+    ensure(
+        interruption_id.0 > 0 && ids.insert(interruption_id),
+        "duplicate interruption ID",
+    )?;
+    ensure(
+        interruption_kind != InterruptionKind::Distraction || facts.session.kind.is_work(),
+        "break distraction event",
+    )?;
+    facts.open = Some(OpenInterruption {
+        id: interruption_id,
+        kind: interruption_kind,
+        started_at: event.effective_at,
+        recorded_at: event.recorded_at,
+        last_recorded_at: event.recorded_at,
+        clock_uncertain: event.recorded_at < event.effective_at
+            || gap_reason == Some(GapReason::ClockAnomaly),
+    });
     Ok(())
 }
 
@@ -398,7 +434,7 @@ fn validate_interruption_end(
         }
     }
     if let MeasuredDuration::Known { elapsed_ms } = end.duration {
-        ensure(!open.clock_moved_backward, "interruption clock evidence")?;
+        ensure(!open.clock_uncertain, "interruption clock evidence")?;
         ensure(
             end.ended_at.0.checked_sub(open.started_at.0) == Some(elapsed_ms)
                 && end.ended_at >= open.recorded_at,
@@ -413,7 +449,7 @@ fn same_open(open: &OpenInterruption, interruption: &Interruption) -> bool {
         && open.kind == interruption.kind
         && open.started_at == interruption.started_at
         && open.recorded_at == interruption.recorded_at
-        && (!open.clock_moved_backward || interruption.time_uncertainty.is_some())
+        && (!open.clock_uncertain || interruption.time_uncertainty.is_some())
 }
 
 fn validate_accounting(
@@ -426,7 +462,9 @@ fn validate_accounting(
             return match timer {
                 TimerState::Running { run } => {
                     ensure(
-                        facts.open.is_none() && !facts.run_closed,
+                        facts.open.is_none()
+                            && facts.pending_gap_reason.is_none()
+                            && !facts.run_closed,
                         "running with closed interval",
                     )?;
                     ensure(
@@ -452,7 +490,10 @@ fn validate_accounting(
         }
     }
     ensure(
-        facts.open.is_none() && facts.run_closed && facts.session.elapsed_ms == facts.credited_ms,
+        facts.open.is_none()
+            && facts.pending_gap_reason.is_none()
+            && facts.run_closed
+            && facts.session.elapsed_ms == facts.credited_ms,
         "ended accounting",
     )?;
     if !facts.ended_by_interruption {

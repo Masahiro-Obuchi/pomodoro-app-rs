@@ -466,6 +466,61 @@ fn from_parts_rejects_known_duration_after_a_backward_observation_pair() {
 }
 
 #[test]
+fn from_parts_preserves_clock_anomaly_gap_evidence() {
+    for (already_interrupted, previous_at, detected_at) in [
+        // A forward discontinuity while an interruption is already open.
+        (true, 1_000, 4_000),
+        // A forward discontinuity that opens an ObservationGap interruption.
+        (false, 1_000, 4_000),
+        // The pair moves backward, although the saved run boundary does not.
+        (false, 3_000, 2_500),
+    ] {
+        let mut state = state();
+        apply(&mut state, Command::Start(SessionKind::Focus), 0);
+        let id = active(&state).0.id;
+        observe(&mut state, 0, 1_000);
+        if already_interrupted {
+            apply(&mut state, Command::Distraction(id), 1_000);
+        }
+        state
+            .observe(Observation {
+                previous_at: Timestamp(previous_at),
+                at: Timestamp(detected_at),
+                monotonic_elapsed_ms: Some(500),
+            })
+            .unwrap();
+        assert!(state.history().events.iter().any(|event| matches!(
+            event.payload,
+            EventKind::ObservationGapDetected {
+                reason: GapReason::ClockAnomaly,
+                ..
+            }
+        )));
+        assert!(interruption(&state).time_uncertainty.is_some());
+        assert_eq!(restored(&state), state);
+
+        let mut bad = state.clone();
+        let ProgressState::Active {
+            timer: TimerState::Interrupted { interruption },
+            ..
+        } = &mut bad.snapshot.state
+        else {
+            panic!("expected interruption")
+        };
+        interruption.time_uncertainty = None;
+        assert!(DomainState::from_parts(bad.snapshot, bad.history, bad.ids).is_err());
+
+        let command = if already_interrupted {
+            Command::Return(id)
+        } else {
+            Command::Resume(id)
+        };
+        apply(&mut state, command, 5_000);
+        reject_known_interruption_duration(&state, 4_000);
+    }
+}
+
+#[test]
 fn from_parts_rejects_known_duration_when_gap_detection_predates_its_boundary() {
     let mut state = state();
     apply(&mut state, Command::Start(SessionKind::Focus), 0);
