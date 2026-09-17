@@ -32,6 +32,8 @@ The target format starts with fresh data and does not import existing settings, 
 
 The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, dependencies, completion criteria, and phase-level progress. Detailed behavior belongs in the specifications; implementation details and verification evidence belong in code, tests, and PRs. The original plan remains available in Git history.
 
+The [Phase 2 plan](docs/PHASE2_PLAN.md) splits persistence and the V1 TUI cutover into independently reviewable steps, with compatibility work, tests, and exit criteria. Phase-level progress remains in the implementation plan.
+
 ## Requirements
 
 - Rust 1.86 or later
