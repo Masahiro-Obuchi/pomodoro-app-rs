@@ -1,13 +1,10 @@
 //! Time, persistence, and notification adapters for native environments.
 
 mod notification;
-// Phase 2-3 will consume these private values in the complete V1 envelope.
+// The V1 storage boundary will consume this codec before the TUI cutover.
 #[cfg_attr(
     not(test),
-    expect(
-        dead_code,
-        reason = "V1 value codecs are staged ahead of the full envelope"
-    )
+    expect(dead_code, reason = "V1 codec is staged ahead of the storage boundary")
 )]
 mod schema_v1;
 mod storage;
