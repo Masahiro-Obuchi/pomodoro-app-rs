@@ -162,7 +162,7 @@ impl<'de> Deserialize<'de> for SettingsV1 {
 
 // Derived struct deserializers also accept positional arrays. V1 requires JSON
 // objects; retain the original MapAccess so duplicate keys remain observable.
-fn deserialize_object<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+pub(super) fn deserialize_object<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
