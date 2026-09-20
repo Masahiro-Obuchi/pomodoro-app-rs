@@ -71,6 +71,21 @@ fn lock_probe() {
             println!("{MESSAGE}ALIVE");
             None
         }
+        "inheritance" => {
+            // Isolate ownership from the parallel test runner. Otherwise an
+            // unrelated test's fork can temporarily inherit this descriptor
+            // before exec closes it, making immediate reacquisition flaky.
+            let lock = location.clone().lock().unwrap();
+            let mut child = Probe::spawn("wait", location.directory());
+            child.expect("ALIVE");
+            drop(lock);
+            // Do not retry: missing CLOEXEC must fail while the child is alive.
+            let reacquired = location.lock().unwrap();
+            assert!(child.child.try_wait().unwrap().is_none());
+            child.finish();
+            println!("{MESSAGE}VERIFIED");
+            Some(reacquired)
+        }
         _ => panic!("unknown helper mode"),
     };
     io::stdout().flush().unwrap();
@@ -185,16 +200,9 @@ fn abrupt_process_exit_releases_the_lock_without_deleting_its_file() {
 #[test]
 fn exec_child_does_not_keep_its_parents_lock_alive() {
     let directory = tempfile::tempdir().unwrap();
-    let location = StorageLocation::at(directory.path().to_owned());
-    let lock = location.clone().lock().unwrap();
-    let mut child = Probe::spawn("wait", directory.path());
-    child.expect("ALIVE");
-    drop(lock);
-    // If CLOEXEC were absent, this would stay busy until the child exits.
-    let reacquired = location.lock().unwrap();
-    assert!(child.child.try_wait().unwrap().is_none());
-    child.finish();
-    drop(reacquired);
+    let probe = Probe::spawn("inheritance", directory.path());
+    probe.expect("VERIFIED");
+    probe.finish();
 }
 
 #[test]
