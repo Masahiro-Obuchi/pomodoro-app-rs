@@ -19,6 +19,10 @@ pub(crate) struct PersistedStateV1 {
 
 impl PersistedStateV1 {
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        // IgnoredAny skips string UTF-8 validation, including in object values.
+        // Check all bytes before classifying an unsupported version so corrupt
+        // documents remain eligible for explicit backup recovery.
+        std::str::from_utf8(bytes).map_err(serde_json::Error::custom)?;
         if bytes
             .iter()
             .find(|byte| !matches!(byte, b' ' | b'\n' | b'\r' | b'\t'))

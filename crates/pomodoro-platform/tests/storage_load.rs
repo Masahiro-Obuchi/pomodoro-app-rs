@@ -147,6 +147,10 @@ fn missing_or_corrupt_primary_offers_only_the_valid_backup() {
         Some(b"\"unterminated".as_slice()),
         Some(b"[]{}".as_slice()),
         Some(b"true false".as_slice()),
+        Some(b"\"\xff\"".as_slice()),
+        Some(b"[\"\xff\"]".as_slice()),
+        Some(b"{\"value\":\"\xff\"}".as_slice()),
+        Some(b"{\"schema_version\":2,\"value\":\"\xff\"}".as_slice()),
     ] {
         let directory = tempfile::tempdir().unwrap();
         let location = location(&directory);
