@@ -220,19 +220,42 @@ fn initial_json_matches_the_documented_contract() {
 
 #[test]
 fn rejects_unversioned_unsupported_duplicate_and_malformed_envelopes() {
-    assert!(matches!(
-        PersistedStateV1::decode(br#"{"timer":{},"history":{}}"#),
-        Err(CodecError::MissingVersion)
-    ));
+    for bytes in [
+        r#"{"timer":{},"history":{}}"#,
+        "null",
+        "[]",
+        "[1]",
+        r#""legacy""#,
+        "true",
+        "false",
+        "123",
+        "-4.5",
+        "1e9999",
+        " \t\r\n [] \n",
+        r#"[{"schema_version":1}]"#,
+    ] {
+        assert!(
+            matches!(
+                PersistedStateV1::decode(bytes.as_bytes()),
+                Err(CodecError::MissingVersion)
+            ),
+            "{bytes}"
+        );
+    }
     for version in [0, 2, u32::MAX] {
         assert!(
             matches!(decode(&json!({"schema_version": version, "future": {"data": true}})), Err(CodecError::UnsupportedVersion(v)) if v == version)
         );
     }
     for bytes in [
-        "null",
-        "[]",
-        "[1]",
+        "",
+        " \t\r\n",
+        "[",
+        "[1,]",
+        "\"unterminated",
+        "true false",
+        "[]{}",
+        "1e",
         "{",
         "{}{}",
         r#"{"schema_version":null}"#,

@@ -19,6 +19,17 @@ pub(crate) struct PersistedStateV1 {
 
 impl PersistedStateV1 {
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes
+            .iter()
+            .find(|byte| !matches!(byte, b' ' | b'\n' | b'\r' | b'\t'))
+            != Some(&b'{')
+        {
+            // A valid non-object document cannot carry a top-level version.
+            // Validate the entire document first: malformed JSON must still be
+            // reported as corruption, not as an unsupported unversioned file.
+            serde_json::from_slice::<IgnoredAny>(bytes)?;
+            return Err(CodecError::MissingVersion);
+        }
         // Inspect the original token stream, not serde_json::Value: a map that
         // overwrites duplicate keys would erase evidence before V1 validation.
         let mut deserializer = serde_json::Deserializer::from_slice(bytes);

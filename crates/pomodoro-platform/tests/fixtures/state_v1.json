@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "save_generation": 7,
+  "saved_at": "1970-01-01T00:00:01.000Z",
+  "id_allocators": {
+    "next_session_id": 1,
+    "next_interruption_id": 1,
+    "next_event_sequence": 1
+  },
+  "snapshot": {
+    "settings": {
+      "focus_seconds": 1500,
+      "short_break_seconds": 300,
+      "long_break_seconds": 900,
+      "focuses_before_long_break": 4
+    },
+    "round_progress": { "completed_focuses_in_round": 0 },
+    "state": {
+      "status": "ready",
+      "next_kind": "focus",
+      "current_task_draft": null
+    }
+  },
+  "history": { "sessions": [], "events": [] }
+}
