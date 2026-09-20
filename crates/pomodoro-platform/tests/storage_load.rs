@@ -140,7 +140,14 @@ fn valid_primary_wins_over_backups_and_newer_or_broken_temps() {
 
 #[test]
 fn missing_or_corrupt_primary_offers_only_the_valid_backup() {
-    for primary in [None, Some(b"{ broken data".as_slice())] {
+    for primary in [
+        None,
+        Some(b"{ broken data".as_slice()),
+        Some(b"[1,]".as_slice()),
+        Some(b"\"unterminated".as_slice()),
+        Some(b"[]{}".as_slice()),
+        Some(b"true false".as_slice()),
+    ] {
         let directory = tempfile::tempdir().unwrap();
         let location = location(&directory);
         if let Some(bytes) = primary {
@@ -176,6 +183,14 @@ fn missing_or_corrupt_primary_offers_only_the_valid_backup() {
 fn old_or_future_primary_is_not_downgraded_to_a_valid_backup() {
     for (primary, version) in [
         (br#"{"timer":{},"history":{}}"#.as_slice(), None),
+        (b"[]".as_slice(), None),
+        (br#""legacy""#.as_slice(), None),
+        (b"null".as_slice(), None),
+        (b"true".as_slice(), None),
+        (b"false".as_slice(), None),
+        (b"123".as_slice(), None),
+        (b"-4.5".as_slice(), None),
+        (br#"[{"schema_version":1}]"#.as_slice(), None),
         (br#"{"schema_version":2}"#.as_slice(), Some(2)),
     ] {
         let directory = tempfile::tempdir().unwrap();
