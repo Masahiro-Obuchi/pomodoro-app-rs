@@ -19,6 +19,7 @@ chrono = "0.4.44"
 crossterm = "0.29.0"
 directories = "6.0.0"
 ratatui = "0.30.0"
+rustix = { version = "1.1.4", features = ["fs"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
