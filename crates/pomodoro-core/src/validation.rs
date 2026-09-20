@@ -435,6 +435,9 @@ fn validate_interruption_end(
             )?;
         }
     }
+    // Evidence can rule out Known, but absence of an anomaly event cannot rule
+    // out Unknown. An interrupted observation can mark only the snapshot as
+    // uncertain; on closure its reason is retained in end.duration itself.
     if let MeasuredDuration::Known { elapsed_ms } = end.duration {
         ensure(!open.clock_uncertain, "interruption clock evidence")?;
         ensure(

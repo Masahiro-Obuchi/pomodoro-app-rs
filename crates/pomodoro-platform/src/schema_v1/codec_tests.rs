@@ -1,6 +1,7 @@
 use pomodoro_core::{
-    Command, CurrentTask, DomainState, Observation, ProgressState, QuickStartChoice, SessionId,
-    SessionKind, SessionOutcome, TimerConfig, Timestamp,
+    Command, CurrentTask, DomainState, EventKind, MeasuredDuration, Observation, ProgressState,
+    QuickStartChoice, SessionId, SessionKind, SessionOutcome, TimeUncertainty, TimerConfig,
+    TimerState, Timestamp,
 };
 use serde_json::{Value, json};
 
@@ -470,6 +471,70 @@ fn preserves_clock_evidence_and_rejects_forged_known_recovery() {
         .unwrap();
     last["payload"]["end"]["duration"] = json!({"status":"known", "elapsed_ms":2_000});
     assert!(matches!(decode(&closed), Err(CodecError::InvalidDomain(_))));
+}
+
+#[test]
+fn preserves_unknown_duration_from_snapshot_only_clock_evidence() {
+    for (start, finish) in [
+        (Command::Pause(SessionId(1)), Command::Resume(SessionId(1))),
+        (
+            Command::Distraction(SessionId(1)),
+            Command::Return(SessionId(1)),
+        ),
+    ] {
+        let mut state = ready(SessionKind::Focus);
+        apply(&mut state, Command::Start(SessionKind::Focus), 1_000);
+        apply(&mut state, start, 1_000);
+        let history_before = state.history().clone();
+
+        // The observation pair is internally consistent, but predates the
+        // interruption. It changes only the snapshot, emitting no gap event.
+        state
+            .observe(Observation {
+                previous_at: Timestamp(400),
+                at: Timestamp(500),
+                monotonic_elapsed_ms: Some(100),
+            })
+            .unwrap();
+        assert_eq!(state.history(), &history_before);
+        let ProgressState::Active {
+            timer: TimerState::Interrupted { interruption },
+            ..
+        } = &state.snapshot().state
+        else {
+            panic!("expected interruption");
+        };
+        assert_eq!(
+            interruption.time_uncertainty,
+            Some(TimeUncertainty::ClockMovedBackward)
+        );
+
+        // A checkpoint must preserve the evidence even without a matching event.
+        state = decode(&wire(&state)).unwrap().domain;
+        apply(&mut state, finish, 2_000);
+        let event = state.history().events.last().unwrap();
+        let EventKind::InterruptionEnded { end, .. } = event.payload else {
+            panic!("expected interruption end");
+        };
+        assert_eq!(
+            end.duration,
+            MeasuredDuration::Unknown {
+                reason: TimeUncertainty::ClockMovedBackward,
+            }
+        );
+        // All persisted event timestamps are healthy-looking. The closed
+        // interruption's Unknown reason is now the sole saved clock evidence.
+        assert!(
+            state
+                .history()
+                .events
+                .iter()
+                .all(|event| event.effective_at == event.recorded_at
+                    && event.recorded_at >= Timestamp(1_000)
+                    && !matches!(event.payload, EventKind::ObservationGapDetected { .. }))
+        );
+        assert_eq!(decode(&wire(&state)).unwrap().domain, state);
+    }
 }
 
 #[test]
