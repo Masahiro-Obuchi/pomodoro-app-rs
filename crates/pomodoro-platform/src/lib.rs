@@ -1,10 +1,10 @@
 //! Time, persistence, and notification adapters for native environments.
 
 mod notification;
-// The V1 load boundary consumes decode; encode awaits atomic save.
+// The native V1 file boundary is currently Linux-only.
 #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "V1 encode is staged ahead of atomic save")
+    not(any(test, target_os = "linux")),
+    expect(dead_code, reason = "V1 storage is currently Linux-only")
 )]
 mod schema_v1;
 mod storage;
@@ -16,7 +16,7 @@ pub use notification::{NotificationError, NotifySendNotifier};
 pub use storage::{NativeStorage, PersistedState, StorageError};
 #[cfg(target_os = "linux")]
 pub use storage_v1::{
-    LoadError, LoadOutcome, LoadProblem, LockedStorage, RecoveryCandidate, SavedState,
-    StorageLocation, StorageLockError, WritableStorage,
+    LoadError, LoadOutcome, LoadProblem, LockedStorage, PendingSave, RecoveryCandidate, SaveError,
+    SaveStage, SavedState, StorageLocation, StorageLockError, WritableStorage,
 };
 pub use time::{TimeError, local_date_at, unix_time_millis};

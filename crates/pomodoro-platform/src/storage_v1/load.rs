@@ -25,8 +25,8 @@ pub enum LoadOutcome {
 /// are retained because generation alone cannot detect external modifications.
 #[derive(Debug)]
 pub struct SavedState {
-    state: PersistedStateV1,
-    original_bytes: Vec<u8>,
+    pub(super) state: PersistedStateV1,
+    pub(super) original_bytes: Vec<u8>,
 }
 
 impl SavedState {
@@ -52,20 +52,22 @@ impl SavedState {
 }
 
 /// Normal-write permission and its lock. Only a successful load/new-store check
-/// constructs this handle. Atomic save will be added on this type in Phase 2-6.
+/// constructs this handle. A failed save retains its fixed candidate and blocks
+/// further normal saves; retry handling is a separate operation.
 /// No default/new constructor, Clone, or conversion from `LockedStorage` exists.
 ///
 /// ```compile_fail
 /// use pomodoro_platform::{LockedStorage, WritableStorage};
 /// fn bypass_load(locked: LockedStorage) -> WritableStorage {
-///     WritableStorage { locked, baseline: None }
+///     WritableStorage { locked, baseline: None, pending: None }
 /// }
 /// ```
 #[derive(Debug)]
 #[must_use = "keep the write-permitted handle alive through the final save"]
 pub struct WritableStorage {
-    locked: LockedStorage,
-    baseline: Option<SavedState>,
+    pub(super) locked: LockedStorage,
+    pub(super) baseline: Option<SavedState>,
+    pub(super) pending: Option<super::PendingSave>,
 }
 
 impl WritableStorage {
@@ -132,6 +134,7 @@ impl LockedStorage {
             Some(bytes) => match PersistedStateV1::decode(&bytes) {
                 Ok(state) => Ok(LoadOutcome::Loaded(WritableStorage {
                     locked: self,
+                    pending: None,
                     baseline: Some(SavedState {
                         state,
                         original_bytes: bytes,
@@ -173,6 +176,7 @@ impl LockedStorage {
                     Ok(LoadOutcome::New(WritableStorage {
                         locked: self,
                         baseline: None,
+                        pending: None,
                     }))
                 } else {
                     Err(LoadError {
@@ -188,7 +192,7 @@ impl LockedStorage {
 
 // Never use Path::exists or a blanket NotFound fallback through symlinks. A
 // dangling link is not an empty store, and a FIFO must not hang application startup.
-fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, LoadProblem> {
+pub(super) fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, LoadProblem> {
     let fd = match open(
         path,
         OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
@@ -221,7 +225,7 @@ fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, LoadProblem> {
 // Inspect names only. Never parse or adopt temporary/quarantined files. This
 // directory belongs to the application: unknown entries also prevent implicit
 // initialization, including non-UTF-8 names and remnants from future versions.
-fn remaining_entries(location: &StorageLocation) -> Result<Vec<PathBuf>, LoadProblem> {
+pub(super) fn remaining_entries(location: &StorageLocation) -> Result<Vec<PathBuf>, LoadProblem> {
     let entries = fs::read_dir(location.directory())
         .map_err(|error| LoadProblem::io(location.directory(), error))?;
     let mut remnants = Vec::new();

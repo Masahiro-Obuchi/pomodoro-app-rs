@@ -1,4 +1,8 @@
-use std::{error::Error, fmt, fs, io, path::PathBuf};
+use std::{
+    error::Error,
+    fmt, fs, io,
+    path::{Path, PathBuf},
+};
 
 use rustix::fs::{FlockOperation, Mode, OFlags, flock, open};
 
@@ -13,6 +17,9 @@ use super::StorageLocation;
 pub struct LockedStorage {
     location: StorageLocation,
     _lock: fs::File,
+    // New directories and their containing directory, deepest first. Atomic
+    // save must sync these before it can report the first durable commit.
+    pub(super) directories_to_sync: Vec<PathBuf>,
 }
 
 impl LockedStorage {
@@ -32,10 +39,11 @@ impl StorageLocation {
     /// [`StorageLockError::Io`] if the directory/lock file cannot be accessed.
     pub fn lock(self) -> Result<LockedStorage, StorageLockError> {
         let directory = self.directory();
-        fs::create_dir_all(directory).map_err(|source| StorageLockError::Io {
-            path: directory.to_owned(),
-            source,
-        })?;
+        let directories_to_sync =
+            create_directory(directory).map_err(|source| StorageLockError::Io {
+                path: directory.to_owned(),
+                source,
+            })?;
         let canonical = fs::canonicalize(directory).map_err(|source| StorageLockError::Io {
             path: directory.to_owned(),
             source,
@@ -80,8 +88,46 @@ impl StorageLocation {
         Ok(LockedStorage {
             location,
             _lock: file,
+            directories_to_sync,
         })
     }
+}
+
+fn create_directory(path: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut cursor = std::path::absolute(path)?;
+    let mut missing = Vec::new();
+    loop {
+        match fs::metadata(&cursor) {
+            Ok(metadata) if metadata.is_dir() => break,
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotADirectory,
+                    "storage path is not a directory",
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                missing.push(cursor.clone());
+                if !cursor.pop() {
+                    return Err(error);
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if missing.is_empty() {
+        return Ok(Vec::new());
+    }
+    fs::create_dir_all(path)?;
+    // The last existing ancestor owns the outermost newly created entry.
+    missing.push(cursor);
+    let mut directories = Vec::new();
+    for path in missing {
+        let canonical = fs::canonicalize(path)?;
+        if !directories.contains(&canonical) {
+            directories.push(canonical);
+        }
+    }
+    Ok(directories)
 }
 
 #[derive(Debug)]
