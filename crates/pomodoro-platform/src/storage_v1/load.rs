@@ -1,16 +1,17 @@
 use std::{
     error::Error,
-    fmt, fs,
-    io::{self, Read},
+    fmt, io,
     path::{Path, PathBuf},
 };
 
 use pomodoro_core::{DomainState, Timestamp};
-use rustix::fs::{Mode, OFlags, open};
 
 use crate::schema_v1::codec::{CodecError, PersistedStateV1};
 
-use super::{LockedStorage, StorageLocation};
+use super::{
+    LockedStorage, StorageLocation,
+    file_io::{read_optional, remaining_entries},
+};
 
 /// The only successful paths out of a locked load. Recovery is never a normal
 /// write permit; neither loading nor offering recovery applies `RestoreApp`.
@@ -190,55 +191,6 @@ impl LockedStorage {
     }
 }
 
-// Never use Path::exists or a blanket NotFound fallback through symlinks. A
-// dangling link is not an empty store, and a FIFO must not hang application startup.
-pub(super) fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, LoadProblem> {
-    let fd = match open(
-        path,
-        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
-        Mode::empty(),
-    ) {
-        Ok(fd) => fd,
-        Err(rustix::io::Errno::NOENT) => return Ok(None),
-        Err(error) => return Err(LoadProblem::io(path, error.into())),
-    };
-    let mut file = fs::File::from(fd);
-    if !file
-        .metadata()
-        .map_err(|error| LoadProblem::io(path, error))?
-        .is_file()
-    {
-        return Err(LoadProblem::io(
-            path,
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "saved state must be a regular file",
-            ),
-        ));
-    }
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|error| LoadProblem::io(path, error))?;
-    Ok(Some(bytes))
-}
-
-// Inspect names only. Never parse or adopt temporary/quarantined files. This
-// directory belongs to the application: unknown entries also prevent implicit
-// initialization, including non-UTF-8 names and remnants from future versions.
-pub(super) fn remaining_entries(location: &StorageLocation) -> Result<Vec<PathBuf>, LoadProblem> {
-    let entries = fs::read_dir(location.directory())
-        .map_err(|error| LoadProblem::io(location.directory(), error))?;
-    let mut remnants = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|error| LoadProblem::io(location.directory(), error))?;
-        if entry.file_name() != "state.lock" {
-            remnants.push(entry.path());
-        }
-    }
-    remnants.sort();
-    Ok(remnants)
-}
-
 fn format_problem(path: PathBuf, error: CodecError) -> LoadProblem {
     match error {
         CodecError::MissingVersion => LoadProblem::Unsupported {
@@ -276,7 +228,7 @@ pub enum LoadProblem {
 }
 
 impl LoadProblem {
-    fn io(path: &Path, source: io::Error) -> Self {
+    pub(super) fn io(path: &Path, source: io::Error) -> Self {
         Self::Io {
             path: path.to_owned(),
             source,
