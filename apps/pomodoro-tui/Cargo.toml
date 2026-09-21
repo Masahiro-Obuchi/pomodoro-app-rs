@@ -11,5 +11,8 @@ pomodoro-core = { path = "../../crates/pomodoro-core" }
 pomodoro-platform = { path = "../../crates/pomodoro-platform" }
 ratatui.workspace = true
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+tempfile = "3.26.0"
+
 [lints]
 workspace = true
