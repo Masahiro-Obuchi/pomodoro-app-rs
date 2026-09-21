@@ -93,7 +93,8 @@ impl ObservationClock {
 
 fn read_clocks() -> (SystemTime, Instant) {
     let monotonic = Instant::now();
-    (SystemTime::now(), monotonic)
+    let wall = SystemTime::now();
+    (wall, monotonic)
 }
 
 // Keep fractions across continuous samples rather than losing up to a millisecond
