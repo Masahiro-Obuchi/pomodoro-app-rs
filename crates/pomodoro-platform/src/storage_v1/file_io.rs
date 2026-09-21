@@ -6,7 +6,7 @@ use rustix::fs::{Mode, OFlags, open};
 use std::{
     fs,
     io::{self, Read, Write},
-    os::unix::fs::OpenOptionsExt,
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -60,40 +60,78 @@ pub(super) fn remaining_entries(location: &StorageLocation) -> Result<Vec<PathBu
     Ok(remnants)
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum SaveTarget {
+    Backup,
+    Primary,
+}
+
+impl SaveTarget {
+    fn stages(self) -> [SaveStage; 5] {
+        match self {
+            Self::Backup => [
+                SaveStage::CreateBackupTemp,
+                SaveStage::WriteBackupTemp,
+                SaveStage::SyncBackupTemp,
+                SaveStage::RenameBackup,
+                SaveStage::SyncBackupDirectory,
+            ],
+            Self::Primary => [
+                SaveStage::CreatePrimaryTemp,
+                SaveStage::WritePrimaryTemp,
+                SaveStage::SyncPrimaryTemp,
+                SaveStage::RenamePrimary,
+                SaveStage::SyncPrimaryDirectory,
+            ],
+        }
+    }
+}
+
+/// Failed cleanups retain open descriptors to preserve inode identity.
+/// An external replacement at the same pathname never becomes our file.
+#[derive(Debug, Default)]
+pub(super) struct TemporaryFiles(Vec<TemporaryFile>);
+
+impl TemporaryFiles {
+    pub(super) fn owns(&self, path: &Path) -> io::Result<bool> {
+        for temporary in &self.0 {
+            if temporary.path.as_deref() == Some(path) {
+                return temporary.owns_path(path);
+            }
+        }
+        Ok(false)
+    }
+
+    pub(super) fn cleanup(&mut self) {
+        self.0.retain_mut(|temporary| temporary.cleanup().is_err());
+    }
+}
+
 pub(super) fn replace_file(
     target: &Path,
     bytes: &[u8],
-    backup: bool,
+    kind: SaveTarget,
+    leftovers: &mut TemporaryFiles,
     before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
 ) -> Result<(), SaveError> {
-    let (create, write, sync, rename, directory_sync) = if backup {
-        (
-            SaveStage::CreateBackupTemp,
-            SaveStage::WriteBackupTemp,
-            SaveStage::SyncBackupTemp,
-            SaveStage::RenameBackup,
-            SaveStage::SyncBackupDirectory,
-        )
-    } else {
-        (
-            SaveStage::CreatePrimaryTemp,
-            SaveStage::WritePrimaryTemp,
-            SaveStage::SyncPrimaryTemp,
-            SaveStage::RenamePrimary,
-            SaveStage::SyncPrimaryDirectory,
-        )
-    };
+    let [create, write, sync, rename, directory_sync] = kind.stages();
     let mut temporary = at_stage(create, target, before, || TemporaryFile::create(target))?;
-    let path = temporary
-        .path
-        .as_ref()
-        .expect("temporary has not been renamed");
-    at_stage(write, path, before, || temporary.file.write_all(bytes))?;
-    at_stage(sync, path, before, || temporary.file.sync_all())?;
-    at_stage(rename, target, before, || fs::rename(path, target))?;
-    temporary.path = None;
-    let parent = target.parent().expect("storage targets have a parent");
-    at_stage(directory_sync, parent, before, || sync_directory(parent))
+    let result = (|| {
+        let path = temporary
+            .path
+            .as_ref()
+            .expect("temporary has not been renamed");
+        at_stage(write, path, before, || temporary.file.write_all(bytes))?;
+        at_stage(sync, path, before, || temporary.file.sync_all())?;
+        at_stage(rename, target, before, || fs::rename(path, target))?;
+        temporary.path = None;
+        let parent = target.parent().expect("storage targets have a parent");
+        at_stage(directory_sync, parent, before, || sync_directory(parent))
+    })();
+    if temporary.cleanup().is_err() {
+        leftovers.0.push(temporary);
+    }
+    result
 }
 
 pub(super) fn sync_directory(path: &Path) -> io::Result<()> {
@@ -120,6 +158,7 @@ pub(super) fn at_stage<T>(
         })
 }
 
+#[derive(Debug)]
 struct TemporaryFile {
     file: fs::File,
     path: Option<PathBuf>,
@@ -158,14 +197,31 @@ impl TemporaryFile {
             "could not allocate a unique save temporary file",
         ))
     }
+
+    fn owns_path(&self, path: &Path) -> io::Result<bool> {
+        let actual = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let expected = self.file.metadata()?;
+        Ok(actual.is_file() && actual.dev() == expected.dev() && actual.ino() == expected.ino())
+    }
+
+    fn cleanup(&mut self) -> io::Result<()> {
+        if let Some(path) = &self.path {
+            if self.owns_path(path)? {
+                fs::remove_file(path)?;
+            }
+            self.path = None;
+        }
+        Ok(())
+    }
 }
 
 impl Drop for TemporaryFile {
     fn drop(&mut self) {
-        if let Some(path) = &self.path {
-            // Cleanup only our exclusively created file. Failure leaves a remnant
-            // which load will never mistake for an initial or committed state.
-            let _ = fs::remove_file(path);
-        }
+        // Never delete a replacement file merely because its name matches.
+        let _ = self.cleanup();
     }
 }

@@ -1,8 +1,11 @@
 use std::{io, path::Path};
 
 use super::{
-    SaveError, SaveStage, SavedState, WritableStorage,
-    file_io::{at_stage, read_optional, remaining_entries, replace_file, sync_directory},
+    LoadProblem, SaveError, SaveStage, SavedState, WritableStorage,
+    file_io::{
+        SaveTarget, TemporaryFiles, at_stage, read_optional, remaining_entries, replace_file,
+        sync_directory,
+    },
 };
 use crate::schema_v1::codec::PersistedStateV1;
 use pomodoro_core::{DomainState, Timestamp};
@@ -13,6 +16,7 @@ use pomodoro_core::{DomainState, Timestamp};
 pub struct PendingSave {
     candidate: SavedState,
     commit_uncertain: bool,
+    temporary_files: TemporaryFiles,
 }
 
 impl PendingSave {
@@ -97,6 +101,7 @@ impl WritableStorage {
                 original_bytes: bytes,
             },
             commit_uncertain: false,
+            temporary_files: TemporaryFiles::default(),
         });
         if let Err(error) = self.write_pending_from_old_primary(before) {
             return Err(self.record_failure(error));
@@ -106,7 +111,7 @@ impl WritableStorage {
 
     /// Retries the fixed candidate. Matching candidate bytes require only sync;
     /// matching baseline bytes permit rewriting the same candidate. Any third
-    /// primary is a conflict.
+    /// primary is a conflict. Initial retries also check for external remnants.
     ///
     /// # Errors
     /// Rejects a missing candidate, conflicting files or I/O failures. The
@@ -148,6 +153,7 @@ impl WritableStorage {
         if primary.as_deref() != self.baseline.as_ref().map(SavedState::original_bytes) {
             return Err(SaveError::Conflict { path: primary_path });
         }
+        self.check_new_store_remnants()?;
         // A successful comparison establishes that the old primary is current.
         self.pending
             .as_mut()
@@ -163,18 +169,21 @@ impl WritableStorage {
         self.sync_storage_ancestry(before)?;
         let location = self.locked.location();
         let pending = self.pending.as_mut().expect("write requires a candidate");
+        pending.temporary_files.cleanup();
         if let Some(baseline) = &self.baseline {
             replace_file(
                 &location.backup_path(),
                 baseline.original_bytes(),
-                true,
+                SaveTarget::Backup,
+                &mut pending.temporary_files,
                 before,
             )?;
         }
         replace_file(
             &location.state_path(),
             pending.candidate.original_bytes(),
-            false,
+            SaveTarget::Primary,
+            &mut pending.temporary_files,
             before,
         )
     }
@@ -216,13 +225,24 @@ impl WritableStorage {
         if current.as_deref() != self.baseline.as_ref().map(SavedState::original_bytes) {
             return Err(SaveError::Conflict { path });
         }
-        // A new-store permit cannot discard a backup/remnant added after load.
-        if self.baseline.is_none() {
-            if let Some(path) = remaining_entries(self.location())
-                .map_err(SaveError::Read)?
-                .into_iter()
-                .next()
-            {
+        self.check_new_store_remnants()
+    }
+
+    fn check_new_store_remnants(&self) -> Result<(), SaveError> {
+        if self.baseline.is_some() {
+            return Ok(());
+        }
+        for path in remaining_entries(self.location()).map_err(SaveError::Read)? {
+            let owned = match &self.pending {
+                Some(pending) => pending.temporary_files.owns(&path).map_err(|source| {
+                    SaveError::Read(LoadProblem::Io {
+                        path: path.clone(),
+                        source,
+                    })
+                })?,
+                None => false,
+            };
+            if !owned {
                 return Err(SaveError::Conflict { path });
             }
         }

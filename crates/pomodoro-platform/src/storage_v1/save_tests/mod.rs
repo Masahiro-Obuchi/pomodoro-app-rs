@@ -37,3 +37,4 @@ mod atomic;
 mod failure_matrix;
 mod regression;
 mod retry;
+mod temporary_files;

@@ -1,5 +1,37 @@
 use super::*;
 
+#[test]
+fn initial_retry_rejects_external_remnants_before_any_io() {
+    for name in ["state.json.bak", "state.json.tmp-external", "unknown-file"] {
+        let directory = tempfile::tempdir().unwrap();
+        let location = StorageLocation::at(directory.path().to_owned());
+        let mut store = load(&location);
+        store
+            .save_with_hook(&domain(), Timestamp(2_000), &mut |stage, _| {
+                if stage == SaveStage::CreatePrimaryTemp {
+                    Err(io::Error::other("injected"))
+                } else {
+                    Ok(())
+                }
+            })
+            .unwrap_err();
+        let candidate = store.pending_save().unwrap().encoded_bytes().to_vec();
+        let external = directory.path().join(name);
+        fs::write(&external, VALID).unwrap();
+        let error = store
+            .retry_pending_with_hook(&mut |_, _| panic!("must check remnants before I/O"))
+            .unwrap_err();
+        assert!(matches!(error, SaveError::Conflict { path } if path == external));
+        assert!(!location.state_path().exists());
+        assert_eq!(fs::read(&external).unwrap(), VALID);
+        assert_eq!(store.pending_save().unwrap().encoded_bytes(), candidate);
+        fs::remove_file(external).unwrap();
+        store.retry_pending().unwrap();
+        assert_eq!(store.saved_state().unwrap().original_bytes(), candidate);
+        assert!(!location.backup_path().exists());
+    }
+}
+
 fn uncertain_store(location: &StorageLocation) -> WritableStorage {
     fs::write(location.state_path(), VALID).unwrap();
     let mut store = load(location);

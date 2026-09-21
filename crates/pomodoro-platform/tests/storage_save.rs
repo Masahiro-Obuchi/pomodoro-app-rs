@@ -168,6 +168,45 @@ fn generation_overflow_and_invalid_timestamp_write_nothing() {
 }
 
 #[test]
+fn initial_retry_protects_a_backup_added_after_a_real_write_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let location = StorageLocation::at(directory.path().to_owned());
+    let mut store = load(&location);
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o500)).unwrap();
+    let result = store.save(&domain(), Timestamp(2_000));
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    if result.is_ok() {
+        eprintln!("permission-denied case requires an unprivileged process");
+        return;
+    }
+    assert!(matches!(
+        result.unwrap_err().failure(),
+        SaveError::Io {
+            stage: SaveStage::CreatePrimaryTemp,
+            ..
+        }
+    ));
+    let candidate = store.pending_save().unwrap().encoded_bytes().to_vec();
+    fs::write(location.backup_path(), VALID).unwrap();
+    let error = store.retry_pending().unwrap_err();
+    assert!(matches!(error, SaveError::Conflict { path } if path == location.backup_path()));
+    assert!(!location.state_path().exists());
+    assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
+    assert_eq!(store.pending_save().unwrap().encoded_bytes(), candidate);
+    assert!(matches!(
+        store.save(&domain(), Timestamp(3_000)),
+        Err(SaveError::PendingSave)
+    ));
+    // After the caller resolves the conflict, the original candidate is reused.
+    fs::remove_file(location.backup_path()).unwrap();
+    store.retry_pending().unwrap();
+    assert_eq!(store.saved_state().unwrap().original_bytes(), candidate);
+    assert_eq!(store.saved_state().unwrap().save_generation(), 1);
+    store.save(&domain(), Timestamp(3_000)).unwrap();
+    assert_eq!(fs::read(location.backup_path()).unwrap(), candidate);
+}
+
+#[test]
 fn primary_symlink_is_not_followed_and_backup_rename_failure_retains_candidate() {
     let directory = tempfile::tempdir().unwrap();
     let location = StorageLocation::at(directory.path().to_owned());
