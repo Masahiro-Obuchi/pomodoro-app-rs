@@ -114,6 +114,20 @@ pub(super) fn replace_file(
     leftovers: &mut TemporaryFiles,
     before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
 ) -> Result<(), SaveError> {
+    replace_file_with_check(target, bytes, kind, leftovers, before, || Ok(()))
+}
+
+/// Run the caller's final policy check after the temporary file is synced and
+/// immediately before rename. A rejected check uses the same temporary cleanup
+/// path as an I/O failure and never replaces the target.
+pub(super) fn replace_file_with_check(
+    target: &Path,
+    bytes: &[u8],
+    kind: SaveTarget,
+    leftovers: &mut TemporaryFiles,
+    before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    check: impl FnOnce() -> Result<(), SaveError>,
+) -> Result<(), SaveError> {
     let [create, write, sync, rename, directory_sync] = kind.stages();
     let mut temporary = at_stage(create, target, before, || TemporaryFile::create(target))?;
     let result = (|| {
@@ -123,7 +137,14 @@ pub(super) fn replace_file(
             .expect("temporary has not been renamed");
         at_stage(write, path, before, || temporary.file.write_all(bytes))?;
         at_stage(sync, path, before, || temporary.file.sync_all())?;
-        at_stage(rename, target, before, || fs::rename(path, target))?;
+        let rename_error = |source| SaveError::Io {
+            stage: rename,
+            path: target.to_owned(),
+            source,
+        };
+        before(rename, target).map_err(rename_error)?;
+        check()?;
+        fs::rename(path, target).map_err(rename_error)?;
         temporary.path = None;
         let parent = target.parent().expect("storage targets have a parent");
         at_stage(directory_sync, parent, before, || sync_directory(parent))
@@ -260,11 +281,7 @@ impl QuarantinedFile {
         &self.path
     }
 
-    pub(super) fn sync(
-        &self,
-        bytes: &[u8],
-        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
-    ) -> Result<(), SaveError> {
+    pub(super) fn verify(&self, bytes: &[u8]) -> Result<(), SaveError> {
         let expected = self
             .file
             .metadata()
@@ -283,6 +300,13 @@ impl QuarantinedFile {
                 path: self.path.clone(),
             });
         }
+        Ok(())
+    }
+
+    pub(super) fn sync(
+        &self,
+        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    ) -> Result<(), SaveError> {
         at_stage(SaveStage::SyncQuarantine, &self.path, before, || {
             self.file.sync_all()
         })?;

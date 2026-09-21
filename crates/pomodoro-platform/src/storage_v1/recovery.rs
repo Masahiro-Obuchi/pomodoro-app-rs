@@ -6,8 +6,8 @@ use super::{
     PendingSave, RecoveryCandidate, SaveError, SaveStage, SavedState, StorageLocation,
     WritableStorage,
     file_io::{
-        QuarantinedFile, SaveTarget, TemporaryFiles, at_stage, read_optional, replace_file,
-        sync_directory,
+        QuarantinedFile, SaveTarget, TemporaryFiles, at_stage, read_optional,
+        replace_file_with_check, sync_directory,
     },
 };
 use crate::schema_v1::codec::PersistedStateV1;
@@ -162,10 +162,9 @@ impl RecoverySave {
                     before,
                 )?);
             }
-            self.quarantine
-                .as_ref()
-                .expect("original primary archived")
-                .sync(bytes, before)?;
+            let quarantine = self.quarantine.as_ref().expect("original primary archived");
+            quarantine.verify(bytes)?;
+            quarantine.sync(before)?;
         }
         at_stage(
             SaveStage::VerifyRecoverySources,
@@ -173,25 +172,44 @@ impl RecoverySave {
             before,
             || Ok(()),
         )?;
-        check_backup(source)?;
-        check_primary(location, primary.as_deref())?;
+        let check = || check_recovery_sources(source, primary.as_deref(), self.quarantine.as_ref());
+        check()?;
         if matches_candidate {
-            return at_stage(
+            at_stage(
                 SaveStage::SyncPrimaryDirectory,
                 location.directory(),
                 before,
                 || sync_directory(location.directory()),
-            );
+            )?;
+            return check();
         }
         pending.temporary_files.cleanup();
-        replace_file(
+        replace_file_with_check(
             &location.state_path(),
             pending.candidate.original_bytes(),
             SaveTarget::Primary,
             &mut pending.temporary_files,
             before,
+            check,
         )
     }
+}
+
+fn check_recovery_sources(
+    source: &RecoveryCandidate,
+    primary: Option<&[u8]>,
+    quarantine: Option<&QuarantinedFile>,
+) -> Result<(), SaveError> {
+    check_backup(source)?;
+    check_primary(source.location(), primary)?;
+    if let Some(bytes) = &source.original_primary {
+        quarantine
+            .expect("original primary archived")
+            .verify(bytes)?;
+    }
+    // This comparison is not atomic with rename. The storage lock remains the
+    // exclusion mechanism; non-cooperating concurrent writers are unsupported.
+    Ok(())
 }
 
 fn check_backup(source: &RecoveryCandidate) -> Result<(), SaveError> {

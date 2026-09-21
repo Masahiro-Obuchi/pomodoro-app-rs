@@ -3,6 +3,9 @@ use crate::{LoadOutcome, StorageLockError};
 use pomodoro_core::{DomainState, EventKind, SessionKind, TimerConfig};
 use std::fs;
 
+#[path = "recovery_race_tests.rs"]
+mod races;
+
 const BROKEN: &[u8] = b"{ broken primary with information to preserve";
 const RESTORED_AT: Timestamp = Timestamp(5_000);
 const STAGES: &[SaveStage] = &[
