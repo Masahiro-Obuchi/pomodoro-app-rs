@@ -58,8 +58,7 @@ impl WritableStorage {
     /// No domain transition, clock sampling or notification is performed here.
     ///
     /// A failed I/O attempt retains the candidate and the last committed baseline.
-    /// Further normal saves are blocked. Phase 2-7 will add explicit retry of the
-    /// same candidate, including reconciliation after an uncertain commit.
+    /// Further normal saves are blocked while that candidate remains pending.
     ///
     /// # Errors
     /// Rejects a pending save, external primary changes, generation overflow and
@@ -106,12 +105,53 @@ impl WritableStorage {
                 original_bytes: bytes,
             },
         });
+        self.write_pending_from_old_primary(before)
+    }
 
-        for path in &self.locked.directories_to_sync {
-            at_stage(SaveStage::SyncStorageAncestry, path, before, || {
-                sync_directory(path)
-            })?;
+    /// Retries the one fixed candidate retained by an earlier failed save.
+    ///
+    /// If the primary already equals that candidate, this only repeats the
+    /// required directory sync and commits the same generation. If the primary
+    /// still equals the last committed baseline, it writes the same candidate.
+    /// Any other primary bytes are a conflict and no backup is changed.
+    ///
+    /// # Errors
+    /// Returns [`SaveError::NoPendingSave`] when there is no failed candidate to
+    /// retry. I/O errors and conflicts retain the candidate unchanged, so a later
+    /// retry cannot create new IDs, events, generations, or timestamps.
+    pub fn retry_pending(&mut self) -> Result<&SavedState, SaveError> {
+        self.retry_pending_with_hook(&mut |_, _| Ok(()))
+    }
+
+    fn retry_pending_with_hook(
+        &mut self,
+        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    ) -> Result<&SavedState, SaveError> {
+        if self.pending.is_none() {
+            return Err(SaveError::NoPendingSave);
         }
+        let primary_path = self.location().state_path();
+        let primary = read_optional(&primary_path).map_err(SaveError::Read)?;
+        let pending = self.pending.as_ref().expect("checked above");
+        if primary.as_deref() == Some(pending.encoded_bytes()) {
+            self.sync_storage_ancestry(before)?;
+            let directory = self.location().directory();
+            at_stage(SaveStage::SyncPrimaryDirectory, directory, before, || {
+                sync_directory(directory)
+            })?;
+            return Ok(self.commit_pending());
+        }
+        if primary.as_deref() == self.baseline.as_ref().map(SavedState::original_bytes) {
+            return self.write_pending_from_old_primary(before);
+        }
+        Err(SaveError::Conflict { path: primary_path })
+    }
+
+    fn write_pending_from_old_primary(
+        &mut self,
+        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    ) -> Result<&SavedState, SaveError> {
+        self.sync_storage_ancestry(before)?;
         let location = self.location();
         if let Some(baseline) = &self.baseline {
             replace_file(
@@ -128,7 +168,22 @@ impl WritableStorage {
             false,
             before,
         )?;
+        Ok(self.commit_pending())
+    }
 
+    fn sync_storage_ancestry(
+        &self,
+        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    ) -> Result<(), SaveError> {
+        for path in &self.locked.directories_to_sync {
+            at_stage(SaveStage::SyncStorageAncestry, path, before, || {
+                sync_directory(path)
+            })?;
+        }
+        Ok(())
+    }
+
+    fn commit_pending(&mut self) -> &SavedState {
         // Only the completed directory sync grants a committed generation.
         self.baseline = Some(
             self.pending
@@ -137,10 +192,9 @@ impl WritableStorage {
                 .candidate,
         );
         self.locked.directories_to_sync.clear();
-        Ok(self
-            .baseline
+        self.baseline
             .as_ref()
-            .expect("successful save establishes a baseline"))
+            .expect("successful save establishes a baseline")
     }
 
     fn check_baseline(&self) -> Result<(), SaveError> {
@@ -294,6 +348,7 @@ pub enum SaveStage {
 #[derive(Debug)]
 pub enum SaveError {
     PendingSave,
+    NoPendingSave,
     GenerationExhausted,
     InvalidCandidate(String),
     Conflict {
@@ -327,6 +382,7 @@ impl fmt::Display for SaveError {
             Self::PendingSave => {
                 f.write_str("a save candidate is already pending; normal saves are blocked")
             }
+            Self::NoPendingSave => f.write_str("there is no pending save candidate to retry"),
             Self::GenerationExhausted => f.write_str("save generation exhausted"),
             Self::InvalidCandidate(detail) => write!(f, "invalid save candidate: {detail}"),
             Self::Conflict { path } => write!(
