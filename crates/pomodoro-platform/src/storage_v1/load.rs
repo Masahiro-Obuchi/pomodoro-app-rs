@@ -86,14 +86,14 @@ impl WritableStorage {
 
 /// A validated .bak offered for explicit recovery, with no normal-write permit.
 /// Retains the lock and original primary bytes for subsequent quarantine and
-/// conflict checks. Phase 2-8 adds the separate recovery operation.
+/// conflict checks. Dropping it declines recovery without changing saved data.
 #[derive(Debug)]
 #[must_use = "keep the recovery candidate alive while deciding whether to recover"]
 pub struct RecoveryCandidate {
-    locked: LockedStorage,
-    backup: SavedState,
+    pub(super) locked: LockedStorage,
+    pub(super) backup: SavedState,
     primary_problem: LoadProblem,
-    original_primary: Option<Vec<u8>>,
+    pub(super) original_primary: Option<Vec<u8>>,
 }
 
 impl RecoveryCandidate {

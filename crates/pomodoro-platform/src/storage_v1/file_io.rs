@@ -166,6 +166,10 @@ struct TemporaryFile {
 
 impl TemporaryFile {
     fn create(target: &Path) -> io::Result<Self> {
+        Self::create_with_suffix(target, "tmp")
+    }
+
+    fn create_with_suffix(target: &Path, suffix: &str) -> io::Result<Self> {
         static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
         for _ in 0..128 {
             let sequence = NEXT_TEMP
@@ -174,7 +178,7 @@ impl TemporaryFile {
                 })
                 .map_err(|_| io::Error::other("temporary file sequence exhausted"))?;
             let mut path = target.as_os_str().to_os_string();
-            path.push(format!(".tmp-{}-{sequence}", std::process::id()));
+            path.push(format!(".{suffix}-{}-{sequence}", std::process::id()));
             let path = PathBuf::from(path);
             match fs::OpenOptions::new()
                 .write(true)
@@ -216,6 +220,76 @@ impl TemporaryFile {
             self.path = None;
         }
         Ok(())
+    }
+}
+
+/// A recovery archive is never deleted on drop, even if a later sync fails.
+/// Keep its descriptor to detect a replacement at the same pathname on retry.
+#[derive(Debug)]
+pub(super) struct QuarantinedFile {
+    file: fs::File,
+    path: PathBuf,
+}
+
+impl QuarantinedFile {
+    pub(super) fn create(
+        primary: &Path,
+        bytes: &[u8],
+        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    ) -> Result<Self, SaveError> {
+        let mut temporary = at_stage(SaveStage::CreateQuarantine, primary, before, || {
+            TemporaryFile::create_with_suffix(primary, "quarantine")
+        })?;
+        let path = temporary.path.as_ref().expect("new quarantine has a path");
+        at_stage(SaveStage::WriteQuarantine, path, before, || {
+            temporary.file.write_all(bytes)
+        })?;
+        // Preserve the complete copy from here onward, including sync failures.
+        let file = temporary.file.try_clone().map_err(|source| SaveError::Io {
+            stage: SaveStage::WriteQuarantine,
+            path: path.clone(),
+            source,
+        })?;
+        Ok(Self {
+            file,
+            path: temporary.path.take().expect("quarantine has not moved"),
+        })
+    }
+
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(super) fn sync(
+        &self,
+        bytes: &[u8],
+        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    ) -> Result<(), SaveError> {
+        let expected = self
+            .file
+            .metadata()
+            .map_err(|source| SaveError::Read(LoadProblem::io(&self.path, source)))?;
+        let actual = fs::symlink_metadata(&self.path)
+            .map_err(|source| SaveError::Read(LoadProblem::io(&self.path, source)))?;
+        if !actual.is_file()
+            || actual.dev() != expected.dev()
+            || actual.ino() != expected.ino()
+            || read_optional(&self.path)
+                .map_err(SaveError::Read)?
+                .as_deref()
+                != Some(bytes)
+        {
+            return Err(SaveError::Conflict {
+                path: self.path.clone(),
+            });
+        }
+        at_stage(SaveStage::SyncQuarantine, &self.path, before, || {
+            self.file.sync_all()
+        })?;
+        let parent = self.path.parent().expect("quarantine has a parent");
+        at_stage(SaveStage::SyncQuarantineDirectory, parent, before, || {
+            sync_directory(parent)
+        })
     }
 }
 

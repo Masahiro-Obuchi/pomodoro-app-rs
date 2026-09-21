@@ -14,9 +14,9 @@ use pomodoro_core::{DomainState, Timestamp};
 /// IDs, generation, timestamp and encoded bytes never change between attempts.
 #[derive(Debug)]
 pub struct PendingSave {
-    candidate: SavedState,
-    commit_uncertain: bool,
-    temporary_files: TemporaryFiles,
+    pub(super) candidate: SavedState,
+    pub(super) commit_uncertain: bool,
+    pub(super) temporary_files: TemporaryFiles,
 }
 
 impl PendingSave {
