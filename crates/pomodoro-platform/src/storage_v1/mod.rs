@@ -2,7 +2,7 @@
 //! owning a lock alone does not authorize overwriting an unread or invalid file.
 //! Load policy grants normal writes only after a valid V1/new-store check.
 //! Normal atomic save and retry retain one fixed candidate and its commit status.
-//! Explicit backup recovery follows in a subsequent Phase 2 unit.
+//! Explicit backup recovery protects the source and quarantines the old primary.
 //!
 //! `load` owns read policy and write authorization; `atomic_save` owns candidates
 //! and retry decisions. `file_io` implements concrete file access and temporary
@@ -13,6 +13,7 @@ mod file_io;
 mod load;
 mod location;
 mod lock;
+mod recovery;
 mod save_error;
 
 pub use atomic_save::PendingSave;
@@ -21,4 +22,5 @@ pub use load::{
 };
 pub use location::StorageLocation;
 pub use lock::{LockedStorage, StorageLockError};
+pub use recovery::RecoverySave;
 pub use save_error::{SaveError, SaveStage};

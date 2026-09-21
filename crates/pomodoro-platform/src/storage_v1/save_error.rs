@@ -7,6 +7,11 @@ use super::LoadProblem;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStage {
     SyncStorageAncestry,
+    VerifyRecoverySources,
+    CreateQuarantine,
+    WriteQuarantine,
+    SyncQuarantine,
+    SyncQuarantineDirectory,
     CreateBackupTemp,
     WriteBackupTemp,
     SyncBackupTemp,

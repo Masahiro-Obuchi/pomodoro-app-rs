@@ -16,7 +16,8 @@ pub use notification::{NotificationError, NotifySendNotifier};
 pub use storage::{NativeStorage, PersistedState, StorageError};
 #[cfg(target_os = "linux")]
 pub use storage_v1::{
-    LoadError, LoadOutcome, LoadProblem, LockedStorage, PendingSave, RecoveryCandidate, SaveError,
-    SaveStage, SavedState, StorageLocation, StorageLockError, WritableStorage,
+    LoadError, LoadOutcome, LoadProblem, LockedStorage, PendingSave, RecoveryCandidate,
+    RecoverySave, SaveError, SaveStage, SavedState, StorageLocation, StorageLockError,
+    WritableStorage,
 };
 pub use time::{TimeError, local_date_at, unix_time_millis};
