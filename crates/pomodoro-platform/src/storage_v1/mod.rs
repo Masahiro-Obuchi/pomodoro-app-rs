@@ -1,17 +1,24 @@
 //! Linux V1 storage boundary. Acquire a lock before load/initialization/recovery;
 //! owning a lock alone does not authorize overwriting an unread or invalid file.
 //! Load policy grants normal writes only after a valid V1/new-store check.
-//! Normal atomic save retains a fixed candidate on failure. Retry and explicit
-//! recovery follow in subsequent Phase 2 units.
+//! Normal atomic save and retry retain one fixed candidate.
+//! Explicit backup recovery follows in a subsequent Phase 2 unit.
+//!
+//! `load` owns read policy and write authorization; `atomic_save` owns candidates
+//! and retry decisions. `file_io` implements concrete file access and temporary
+//! ownership; `save_error` defines save stages and failure diagnostics.
 
 mod atomic_save;
+mod file_io;
 mod load;
 mod location;
 mod lock;
+mod save_error;
 
-pub use atomic_save::{PendingSave, SaveError, SaveStage};
+pub use atomic_save::PendingSave;
 pub use load::{
     LoadError, LoadOutcome, LoadProblem, RecoveryCandidate, SavedState, WritableStorage,
 };
 pub use location::StorageLocation;
 pub use lock::{LockedStorage, StorageLockError};
+pub use save_error::{SaveError, SaveStage};
