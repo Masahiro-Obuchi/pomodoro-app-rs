@@ -20,4 +20,4 @@ pub use storage_v1::{
     RecoverySave, SaveError, SaveStage, SavedState, StorageLocation, StorageLockError,
     WritableStorage,
 };
-pub use time::{TimeError, local_date_at, unix_time_millis};
+pub use time::{ObservationClock, TimeError, local_date_at, unix_time_millis};
