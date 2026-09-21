@@ -1,8 +1,4 @@
-use std::{
-    error::Error,
-    fmt, fs, io,
-    path::{Path, PathBuf},
-};
+use std::{error::Error, fmt, fs, io, path::PathBuf};
 
 use rustix::fs::{FlockOperation, Mode, OFlags, flock, open};
 
@@ -17,8 +13,9 @@ use super::StorageLocation;
 pub struct LockedStorage {
     location: StorageLocation,
     _lock: fs::File,
-    // New directories and their containing directory, deepest first. Atomic
-    // save must sync these before it can report the first durable commit.
+    // The full canonical ancestry, deepest first, for every new handle. Existing
+    // entries may belong to an earlier process whose directory sync failed.
+    // Atomic save clears this only after a successful durable commit.
     pub(super) directories_to_sync: Vec<PathBuf>,
 }
 
@@ -39,15 +36,21 @@ impl StorageLocation {
     /// [`StorageLockError::Io`] if the directory/lock file cannot be accessed.
     pub fn lock(self) -> Result<LockedStorage, StorageLockError> {
         let directory = self.directory();
-        let directories_to_sync =
-            create_directory(directory).map_err(|source| StorageLockError::Io {
-                path: directory.to_owned(),
-                source,
-            })?;
+        fs::create_dir_all(directory).map_err(|source| StorageLockError::Io {
+            path: directory.to_owned(),
+            source,
+        })?;
         let canonical = fs::canonicalize(directory).map_err(|source| StorageLockError::Io {
             path: directory.to_owned(),
             source,
         })?;
+        // No durable marker identifies where a previous process stopped creating
+        // or syncing directories. Reconstruct the entire chain on each open,
+        // including parents which already existed before this invocation.
+        let directories_to_sync = canonical
+            .ancestors()
+            .map(std::path::Path::to_owned)
+            .collect();
         let location = Self::at(canonical);
         let path = location.lock_path();
         // CLOEXEC is set atomically with open, including for notification commands
@@ -91,43 +94,6 @@ impl StorageLocation {
             directories_to_sync,
         })
     }
-}
-
-fn create_directory(path: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut cursor = std::path::absolute(path)?;
-    let mut missing = Vec::new();
-    loop {
-        match fs::metadata(&cursor) {
-            Ok(metadata) if metadata.is_dir() => break,
-            Ok(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotADirectory,
-                    "storage path is not a directory",
-                ));
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                missing.push(cursor.clone());
-                if !cursor.pop() {
-                    return Err(error);
-                }
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    if missing.is_empty() {
-        return Ok(Vec::new());
-    }
-    fs::create_dir_all(path)?;
-    // The last existing ancestor owns the outermost newly created entry.
-    missing.push(cursor);
-    let mut directories = Vec::new();
-    for path in missing {
-        let canonical = fs::canonicalize(path)?;
-        if !directories.contains(&canonical) {
-            directories.push(canonical);
-        }
-    }
-    Ok(directories)
 }
 
 #[derive(Debug)]

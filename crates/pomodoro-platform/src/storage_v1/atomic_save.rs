@@ -108,7 +108,7 @@ impl WritableStorage {
         });
 
         for path in &self.locked.directories_to_sync {
-            at_stage(SaveStage::SyncCreatedDirectory, path, before, || {
+            at_stage(SaveStage::SyncStorageAncestry, path, before, || {
                 sync_directory(path)
             })?;
         }
@@ -278,7 +278,7 @@ impl Drop for TemporaryFile {
 /// previous primary (a backup update may already have completed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStage {
-    SyncCreatedDirectory,
+    SyncStorageAncestry,
     CreateBackupTemp,
     WriteBackupTemp,
     SyncBackupTemp,
