@@ -89,8 +89,8 @@ fn every_io_failure_preserves_the_baseline_and_fixed_candidate() {
             Err(StorageLockError::InUse { .. })
         ));
         assert!(matches!(
-            store.save(&domain, Timestamp(9_000)),
-            Err(SaveError::PendingSave)
+            store.save(&domain, Timestamp(9_000)).unwrap_err().failure(),
+            SaveError::PendingSave
         ));
         assert_eq!(store.pending_save().unwrap().encoded_bytes(), frozen_bytes);
         assert_eq!(store.saved_state().unwrap().original_bytes(), VALID);

@@ -2,9 +2,8 @@ use std::{error::Error, fmt, io, path::PathBuf};
 
 use super::LoadProblem;
 
-/// The I/O boundary that failed. Primary rename followed by a directory-sync
-/// failure leaves commit durability unknown; all earlier failures preserve the
-/// previous primary (a backup update may already have completed).
+/// The failed I/O operation. Commit uncertainty is separate from the operation:
+/// an ancestry sync or read can fail while retrying an already-renamed primary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStage {
     SyncStorageAncestry,
@@ -35,19 +34,40 @@ pub enum SaveError {
         path: PathBuf,
         source: io::Error,
     },
+    /// Retains both the unconfirmed commit and the original failure diagnostics.
+    CommitUncertain(Box<Self>),
 }
 
 impl SaveError {
-    /// Whether this attempt replaced the primary without confirming durability.
+    /// Whether the pending candidate may already be the primary without a
+    /// confirmed durable commit, including failures during subsequent retries.
     #[must_use]
     pub fn is_commit_uncertain(&self) -> bool {
         matches!(
             self,
-            Self::Io {
-                stage: SaveStage::SyncPrimaryDirectory,
-                ..
-            }
+            Self::CommitUncertain(_)
+                | Self::Io {
+                    stage: SaveStage::SyncPrimaryDirectory,
+                    ..
+                }
         )
+    }
+
+    /// The underlying failure, without the retained commit-uncertainty wrapper.
+    #[must_use]
+    pub fn failure(&self) -> &Self {
+        match self {
+            Self::CommitUncertain(error) => error.failure(),
+            error => error,
+        }
+    }
+
+    pub(super) fn with_commit_uncertainty(self, uncertain: bool) -> Self {
+        if uncertain && !self.is_commit_uncertain() {
+            Self::CommitUncertain(Box::new(self))
+        } else {
+            self
+        }
     }
 }
 
@@ -71,6 +91,7 @@ impl fmt::Display for SaveError {
                 path,
                 source,
             } => write!(f, "save failed at {stage:?} ({}): {source}", path.display()),
+            Self::CommitUncertain(error) => write!(f, "save commit remains uncertain: {error}"),
         }
     }
 }
@@ -80,6 +101,7 @@ impl Error for SaveError {
         match self {
             Self::Read(error) => Some(error),
             Self::Io { source, .. } => Some(source),
+            Self::CommitUncertain(error) => Some(error.as_ref()),
             _ => None,
         }
     }

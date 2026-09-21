@@ -34,4 +34,6 @@ fn load(location: &StorageLocation) -> WritableStorage {
 }
 
 mod atomic;
+mod failure_matrix;
+mod regression;
 mod retry;

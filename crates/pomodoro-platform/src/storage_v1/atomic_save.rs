@@ -1,19 +1,18 @@
 use std::{io, path::Path};
 
-use pomodoro_core::{DomainState, Timestamp};
-
-use crate::schema_v1::codec::PersistedStateV1;
-
 use super::{
     SaveError, SaveStage, SavedState, WritableStorage,
     file_io::{at_stage, read_optional, remaining_entries, replace_file, sync_directory},
 };
+use crate::schema_v1::codec::PersistedStateV1;
+use pomodoro_core::{DomainState, Timestamp};
 
-/// One validated, encoded candidate. Its domain, IDs, generation, timestamp and
-/// bytes stay fixed after a failed attempt; it is not a committed saved state.
+/// One fixed candidate, plus the I/O state required to retry it. Its domain,
+/// IDs, generation, timestamp and encoded bytes never change between attempts.
 #[derive(Debug)]
 pub struct PendingSave {
     candidate: SavedState,
+    commit_uncertain: bool,
 }
 
 impl PendingSave {
@@ -36,10 +35,15 @@ impl PendingSave {
     pub fn encoded_bytes(&self) -> &[u8] {
         self.candidate.original_bytes()
     }
+
+    /// A primary rename has not yet been reconciled with a durable commit.
+    #[must_use]
+    pub fn is_commit_uncertain(&self) -> bool {
+        self.commit_uncertain
+    }
 }
 
 impl WritableStorage {
-    /// The immutable candidate retained after an unsuccessful write attempt.
     #[must_use]
     pub fn pending_save(&self) -> Option<&PendingSave> {
         self.pending.as_ref()
@@ -48,14 +52,11 @@ impl WritableStorage {
     /// Saves a fixed candidate under the existing lock. The previous validated
     /// primary becomes the backup; success includes file and directory syncs.
     /// No domain transition, clock sampling or notification is performed here.
-    ///
-    /// A failed I/O attempt retains the candidate and the last committed baseline.
-    /// Further normal saves are blocked while that candidate remains pending.
+    /// Failed attempts retain the candidate and block further normal saves.
     ///
     /// # Errors
-    /// Rejects a pending save, external primary changes, generation overflow and
-    /// invalid candidates before writing. I/O failures report the save stage;
-    /// failure after primary rename is an uncertain commit, not a rolled-back save.
+    /// Rejects pending saves, external changes, generation overflow and invalid
+    /// candidates before writing. Errors preserve an uncertain commit status.
     pub fn save(
         &mut self,
         domain: &DomainState,
@@ -64,17 +65,16 @@ impl WritableStorage {
         self.save_with_hook(domain, saved_at, &mut |_, _| Ok(()))
     }
 
-    // A hook at save-specific I/O boundaries lets tests fail individual writes,
-    // syncs and renames. It is private, with no runtime environment switches or
-    // general-purpose filesystem abstraction.
+    // Injection stays at concrete save I/O boundaries, without runtime switches
+    // or a general-purpose filesystem abstraction.
     fn save_with_hook(
         &mut self,
         domain: &DomainState,
         saved_at: Timestamp,
         before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
     ) -> Result<&SavedState, SaveError> {
-        if self.pending.is_some() {
-            return Err(SaveError::PendingSave);
+        if let Some(pending) = &self.pending {
+            return Err(SaveError::PendingSave.with_commit_uncertainty(pending.commit_uncertain));
         }
         self.check_baseline()?;
         let generation = self
@@ -96,21 +96,22 @@ impl WritableStorage {
                 state,
                 original_bytes: bytes,
             },
+            commit_uncertain: false,
         });
-        self.write_pending_from_old_primary(before)
+        if let Err(error) = self.write_pending_from_old_primary(before) {
+            return Err(self.record_failure(error));
+        }
+        Ok(self.commit_pending())
     }
 
-    /// Retries the one fixed candidate retained by an earlier failed save.
-    ///
-    /// If the primary already equals that candidate, this only repeats the
-    /// required directory sync and commits the same generation. If the primary
-    /// still equals the last committed baseline, it writes the same candidate.
-    /// Any other primary bytes are a conflict and no backup is changed.
+    /// Retries the fixed candidate. Matching candidate bytes require only sync;
+    /// matching baseline bytes permit rewriting the same candidate. Any third
+    /// primary is a conflict.
     ///
     /// # Errors
-    /// Returns [`SaveError::NoPendingSave`] when there is no failed candidate to
-    /// retry. I/O errors and conflicts retain the candidate unchanged, so a later
-    /// retry cannot create new IDs, events, generations, or timestamps.
+    /// Rejects a missing candidate, conflicting files or I/O failures. The
+    /// candidate stays fixed, including after read failures and repeated retries.
+    /// Errors retain commit uncertainty until primary reconciliation succeeds.
     pub fn retry_pending(&mut self) -> Result<&SavedState, SaveError> {
         self.retry_pending_with_hook(&mut |_, _| Ok(()))
     }
@@ -122,29 +123,46 @@ impl WritableStorage {
         if self.pending.is_none() {
             return Err(SaveError::NoPendingSave);
         }
+        if let Err(error) = self.retry_candidate(before) {
+            return Err(self.record_failure(error));
+        }
+        Ok(self.commit_pending())
+    }
+
+    fn retry_candidate(
+        &mut self,
+        before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
+    ) -> Result<(), SaveError> {
         let primary_path = self.location().state_path();
         let primary = read_optional(&primary_path).map_err(SaveError::Read)?;
-        let pending = self.pending.as_ref().expect("checked above");
+        let pending = self.pending.as_mut().expect("retry requires a candidate");
         if primary.as_deref() == Some(pending.encoded_bytes()) {
+            // Record this before any operation can fail, including ancestry sync.
+            pending.commit_uncertain = true;
             self.sync_storage_ancestry(before)?;
             let directory = self.location().directory();
-            at_stage(SaveStage::SyncPrimaryDirectory, directory, before, || {
+            return at_stage(SaveStage::SyncPrimaryDirectory, directory, before, || {
                 sync_directory(directory)
-            })?;
-            return Ok(self.commit_pending());
+            });
         }
-        if primary.as_deref() == self.baseline.as_ref().map(SavedState::original_bytes) {
-            return self.write_pending_from_old_primary(before);
+        if primary.as_deref() != self.baseline.as_ref().map(SavedState::original_bytes) {
+            return Err(SaveError::Conflict { path: primary_path });
         }
-        Err(SaveError::Conflict { path: primary_path })
+        // A successful comparison establishes that the old primary is current.
+        self.pending
+            .as_mut()
+            .expect("retry requires a candidate")
+            .commit_uncertain = false;
+        self.write_pending_from_old_primary(before)
     }
 
     fn write_pending_from_old_primary(
         &mut self,
         before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
-    ) -> Result<&SavedState, SaveError> {
+    ) -> Result<(), SaveError> {
         self.sync_storage_ancestry(before)?;
-        let location = self.location();
+        let location = self.locked.location();
+        let pending = self.pending.as_mut().expect("write requires a candidate");
         if let Some(baseline) = &self.baseline {
             replace_file(
                 &location.backup_path(),
@@ -153,14 +171,12 @@ impl WritableStorage {
                 before,
             )?;
         }
-        let pending = self.pending.as_ref().expect("candidate was fixed above");
         replace_file(
             &location.state_path(),
-            pending.encoded_bytes(),
+            pending.candidate.original_bytes(),
             false,
             before,
-        )?;
-        Ok(self.commit_pending())
+        )
     }
 
     fn sync_storage_ancestry(
@@ -175,8 +191,13 @@ impl WritableStorage {
         Ok(())
     }
 
+    fn record_failure(&mut self, error: SaveError) -> SaveError {
+        let pending = self.pending.as_mut().expect("attempt requires a candidate");
+        pending.commit_uncertain |= error.is_commit_uncertain();
+        error.with_commit_uncertainty(pending.commit_uncertain)
+    }
+
     fn commit_pending(&mut self) -> &SavedState {
-        // Only the completed directory sync grants a committed generation.
         self.baseline = Some(
             self.pending
                 .take()
