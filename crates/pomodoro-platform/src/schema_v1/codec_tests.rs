@@ -226,6 +226,7 @@ fn rejects_unversioned_unsupported_duplicate_and_malformed_envelopes() {
         "[]",
         "[1]",
         r#""legacy""#,
+        r#""作業""#,
         "true",
         "false",
         "123",
@@ -273,6 +274,24 @@ fn rejects_unversioned_unsupported_duplicate_and_malformed_envelopes() {
                 Err(CodecError::Json(_))
             ),
             "{bytes}"
+        );
+    }
+}
+
+#[test]
+fn invalid_utf8_is_corruption_before_version_classification() {
+    for bytes in [
+        b"\"\xff\"".as_slice(),
+        b"\"\xc3\"".as_slice(),
+        b"[\"\xff\"]".as_slice(),
+        b"[{\"value\":\"\xff\"}]".as_slice(),
+        b"{\"value\":\"\xff\"}".as_slice(),
+        b"{\"schema_version\":1,\"value\":\"\xff\"}".as_slice(),
+        b"{\"schema_version\":2,\"value\":\"\xff\"}".as_slice(),
+    ] {
+        assert!(
+            matches!(PersistedStateV1::decode(bytes), Err(CodecError::Json(_))),
+            "{bytes:?}"
         );
     }
 }

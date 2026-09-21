@@ -13,6 +13,10 @@ use super::StorageLocation;
 pub struct LockedStorage {
     location: StorageLocation,
     _lock: fs::File,
+    // The full canonical ancestry, deepest first, for every new handle. Existing
+    // entries may belong to an earlier process whose directory sync failed.
+    // Atomic save clears this only after a successful durable commit.
+    pub(super) directories_to_sync: Vec<PathBuf>,
 }
 
 impl LockedStorage {
@@ -40,6 +44,13 @@ impl StorageLocation {
             path: directory.to_owned(),
             source,
         })?;
+        // No durable marker identifies where a previous process stopped creating
+        // or syncing directories. Reconstruct the entire chain on each open,
+        // including parents which already existed before this invocation.
+        let directories_to_sync = canonical
+            .ancestors()
+            .map(std::path::Path::to_owned)
+            .collect();
         let location = Self::at(canonical);
         let path = location.lock_path();
         // CLOEXEC is set atomically with open, including for notification commands
@@ -80,6 +91,7 @@ impl StorageLocation {
         Ok(LockedStorage {
             location,
             _lock: file,
+            directories_to_sync,
         })
     }
 }
