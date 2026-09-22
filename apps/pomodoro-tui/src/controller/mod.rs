@@ -140,6 +140,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
     /// Observes before applying an input. If observation itself causes a durable
     /// transition, saves that transition and discards this input. Session IDs and
     /// operations are never recomputed against a newly completed session.
+    /// A no-op succeeds without saving when there are no outstanding changes.
     ///
     /// # Errors
     /// Reports blocked input or clock/domain/save failures. Failed saves retain
@@ -152,18 +153,27 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
             self.begin_save(observation.at, effects, false);
             return self.flush();
         }
+        // Domain transitions only append history; avoid cloning the full history
+        // to detect no-ops, while checking snapshot and allocation changes too.
+        let before = self.domain.snapshot().clone();
+        let ids = self.domain.id_allocators().clone();
+        let sessions = self.domain.history().sessions.len();
+        let events = self.domain.history().events.len();
         self.domain
             .apply(command.clone(), observation.at)
             .map_err(ControllerError::Domain)?;
-        self.dirty = true;
-        self.begin_save(
-            observation.at,
-            Effects {
-                command: Some(command),
-                completed: None,
-            },
-            false,
-        );
+        self.dirty |= &before != self.domain.snapshot()
+            || &ids != self.domain.id_allocators()
+            || sessions != self.domain.history().sessions.len()
+            || events != self.domain.history().events.len();
+        let effects = Effects {
+            command: Some(command),
+            completed: None,
+        };
+        if !self.dirty {
+            return Ok(self.finish(effects));
+        }
+        self.begin_save(observation.at, effects, false);
         self.flush()
     }
 
