@@ -1,11 +1,15 @@
-//! Save-confirmed operations. Terminal keys, startup/recovery confirmation and
-//! shutdown UX are connected separately; core remains the only timing policy.
+//! Save-confirmed operations and lifecycle. Terminal keys and confirmation UX
+//! are connected separately; core remains the only timing policy.
 
 mod error;
 mod ports;
+mod shutdown;
+mod startup;
 
 pub use error::ControllerError;
 pub use ports::{Clock, CompletionNotifier, SaveStore};
+pub use shutdown::ExitOutcome;
+pub use startup::{Startup, StartupError, StartupSave, StartupSaveError};
 
 use pomodoro_core::{
     Command, DomainState, Observation, PomodoroState, ProgressState, SessionKind, SessionOutcome,
@@ -36,8 +40,15 @@ struct Effects {
 struct PendingCommit {
     at: Timestamp,
     effects: Effects,
-    recovery_save: bool,
+    kind: SaveKind,
     recover_after_save: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SaveKind {
+    Operation,
+    Recovery,
+    Shutdown,
 }
 
 #[derive(Debug)]
@@ -45,6 +56,7 @@ enum Mode {
     Operating,
     Saving(PendingCommit),
     Recovering(Effects),
+    Closed,
 }
 
 /// Owns the save handle for the lifetime of normal application operation.
@@ -117,7 +129,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
 
     #[must_use]
     pub fn is_save_pending(&self) -> bool {
-        !matches!(self.mode, Mode::Operating)
+        matches!(self.mode, Mode::Saving(_) | Mode::Recovering(_))
     }
 
     /// Observes time. Ordinary ticks only dirty the live state; meaningful
@@ -141,16 +153,20 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
     /// transition, saves that transition and discards this input. Session IDs and
     /// operations are never recomputed against a newly completed session.
     /// A no-op succeeds without saving when there are no outstanding changes.
+    /// `CloseApp` uses [`Self::shutdown`], including its terminal closed state.
     ///
     /// # Errors
     /// Reports blocked input or clock/domain/save failures. Failed saves retain
     /// the candidate; retry never executes the input a second time.
     pub fn execute(&mut self, command: Command) -> Result<Commit, ControllerError> {
+        if command == Command::CloseApp {
+            return self.shutdown();
+        }
         self.require_operating()?;
         let observation = self.sample()?;
         let (meaningful, effects) = self.apply_observation(observation)?;
         if meaningful {
-            self.begin_save(observation.at, effects, false);
+            self.begin_save(observation.at, effects, SaveKind::Operation);
             return self.flush();
         }
         // Domain transitions only append history; avoid cloning the full history
@@ -173,7 +189,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
         if !self.dirty {
             return Ok(self.finish(effects));
         }
-        self.begin_save(observation.at, effects, false);
+        self.begin_save(observation.at, effects, SaveKind::Operation);
         self.flush()
     }
 
@@ -192,7 +208,9 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
     }
 
     fn require_operating(&self) -> Result<(), ControllerError> {
-        if self.is_save_pending() {
+        if matches!(self.mode, Mode::Closed) {
+            Err(ControllerError::Closed)
+        } else if self.is_save_pending() {
             Err(ControllerError::SavePending)
         } else {
             Ok(())
@@ -213,7 +231,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
         if self.dirty
             && (force || meaningful || self.checkpoint_elapsed_ms >= CHECKPOINT_INTERVAL_MS)
         {
-            self.begin_save(observation.at, effects, false);
+            self.begin_save(observation.at, effects, SaveKind::Operation);
             return self.flush().map(Some);
         }
         Ok(None)
@@ -262,11 +280,11 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
         ))
     }
 
-    fn begin_save(&mut self, at: Timestamp, effects: Effects, recovery_save: bool) {
+    fn begin_save(&mut self, at: Timestamp, effects: Effects, kind: SaveKind) {
         self.mode = Mode::Saving(PendingCommit {
             at,
             effects,
-            recovery_save,
+            kind,
             recover_after_save: false,
         });
     }
@@ -289,7 +307,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
                 self.store.save(&self.domain, pending.at)
             };
             if let Err(error) = result {
-                pending.recover_after_save |= !pending.recovery_save;
+                pending.recover_after_save |= pending.kind == SaveKind::Operation;
                 self.clock.break_continuity();
                 return Err(ControllerError::Save(error));
             }
@@ -301,6 +319,9 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
             if pending.recover_after_save {
                 self.mode = Mode::Recovering(pending.effects);
             } else {
+                if pending.kind == SaveKind::Shutdown {
+                    self.mode = Mode::Closed;
+                }
                 return Ok(self.finish(pending.effects));
             }
         }
@@ -316,7 +337,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> Controller<S, C, N> {
             unreachable!()
         };
         if changed {
-            self.begin_save(observation.at, effects, true);
+            self.begin_save(observation.at, effects, SaveKind::Recovery);
             Ok(None)
         } else {
             Ok(Some(self.finish(effects)))
