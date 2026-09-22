@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, io, process::Command};
 
-use pomodoro_core::legacy::SessionKind;
+use pomodoro_core::SessionKind;
 
 /// Desktop notifications delivered through Linux `notify-send`.
 #[derive(Debug, Default, Clone, Copy)]
@@ -16,6 +16,10 @@ impl NotifySendNotifier {
     pub fn session_completed(self, completed: SessionKind) -> Result<(), NotificationError> {
         let (summary, body) = match completed {
             SessionKind::Focus => ("集中タイム完了", "休憩しましょう。"),
+            SessionKind::QuickStart => (
+                "Quick Start完了",
+                "終了するか、集中タイムへ継続するか選んでください。",
+            ),
             SessionKind::ShortBreak | SessionKind::LongBreak => {
                 ("休憩完了", "次の集中タイムを始められます。")
             }
@@ -30,6 +34,17 @@ impl NotifySendNotifier {
         } else {
             Err(NotificationError::UnsuccessfulExit(status.code()))
         }
+    }
+
+    /// Temporary entry point until the executable switches to V1.
+    ///
+    /// # Errors
+    /// Returns the same delivery errors as [`Self::session_completed`].
+    pub fn legacy_session_completed(
+        self,
+        completed: pomodoro_core::legacy::SessionKind,
+    ) -> Result<(), NotificationError> {
+        self.session_completed(completed.into())
     }
 }
 
