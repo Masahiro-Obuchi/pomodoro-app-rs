@@ -1,5 +1,9 @@
+#[path = "legacy/app.rs"]
 mod app;
+mod settings;
+#[path = "legacy/ui.rs"]
 mod ui;
+mod ui_settings;
 
 use std::{error::Error, io, time::Duration};
 

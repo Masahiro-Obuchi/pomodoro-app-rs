@@ -1,236 +1,195 @@
-use pomodoro_core::legacy::{SessionKind, TimerStatus};
-use pomodoro_platform::local_date_at;
+//! Snapshot-derived rendering. Drawing never samples a clock or changes state.
+
+use pomodoro_core::{
+    CurrentTask, InterruptionKind, PomodoroState, ProgressState, SessionKind, TimerState,
+};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Clear, Gauge, Paragraph, Wrap},
+    layout::{Alignment, Constraint, Layout},
+    style::{Color, Style},
+    text::Line,
+    widgets::{Block, Borders, Gauge, Paragraph, Wrap},
 };
 
-use crate::app::{App, SettingsDraft, SettingsField};
+use crate::{
+    app::App,
+    controller::{Clock, CompletionNotifier, SaveStore},
+    ui_settings::{centered, draw_settings},
+};
 
-pub fn draw(frame: &mut Frame<'_>, app: &App, now_ms: u64) {
-    let area = centered(frame.area(), 70, 22);
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(5),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Min(3),
-        ])
-        .split(area);
-
-    draw_header(frame, app, sections[0]);
-    draw_timer(frame, app, now_ms, sections[1]);
-    draw_progress(frame, app, now_ms, sections[2]);
-    draw_history(frame, app, now_ms, sections[3]);
-    draw_footer(frame, app, sections[4]);
-
+pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
+    frame: &mut Frame<'_>,
+    app: &App<S, C, N>,
+) {
+    let sections = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Min(6),
+    ])
+    .split(centered(frame.area(), 82, 25));
+    let snapshot = app.state().snapshot();
+    let (kind, status, remaining_ms, total_ms, task) = timer_view(snapshot);
+    let title = if app.pending_state().is_some() {
+        format!(
+            "保存待ち・計時保留 | 最後に保存した状態: {} · {status}",
+            session_label(kind)
+        )
+    } else {
+        format!("{} · {status}", session_label(kind))
+    };
+    frame.render_widget(panel(title, " Pomodoro "), sections[0]);
+    let seconds = remaining_ms.div_ceil(1_000);
+    frame.render_widget(
+        panel(
+            format!(
+                "{:02}:{:02}   作業: {}",
+                seconds / 60,
+                seconds % 60,
+                task.map_or("未設定", CurrentTask::as_str)
+            ),
+            " タイマー ",
+        ),
+        sections[1],
+    );
+    let percent = total_ms.saturating_sub(remaining_ms).saturating_mul(100) / total_ms;
+    frame.render_widget(
+        Gauge::default()
+            .block(Block::default().borders(Borders::ALL))
+            .gauge_style(Style::default().fg(Color::LightCyan))
+            .percent(u16::try_from(percent).unwrap_or(100)),
+        sections[2],
+    );
+    let history = match app.state().reflection() {
+        Ok(summary) => format!(
+            "累計: 集中完了 {}回 / 作業 {}分   ラウンド: {}/{}",
+            summary.completed_focus_sessions,
+            summary.work_ms / 60_000,
+            snapshot.round_progress.completed_focuses_in_round,
+            snapshot.settings.focuses_before_long_break(),
+        ),
+        Err(error) => format!("履歴を集計できませんでした: {error}"),
+    };
+    frame.render_widget(panel(history, " 記録 "), sections[3]);
+    let footer = footer_lines(app);
+    frame.render_widget(
+        Paragraph::new(footer)
+            .wrap(Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL).title(" 操作 ")),
+        sections[4],
+    );
     if let Some(settings) = app.settings() {
         draw_settings(frame, settings);
     }
 }
 
-fn draw_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let timer = &app.state().timer;
-    let title = format!(
-        " {} · {} ",
-        session_label(timer.session()),
-        status_label(timer.status())
-    );
-    let paragraph = Paragraph::new(title)
-        .alignment(Alignment::Center)
-        .style(
-            Style::default()
-                .fg(session_color(timer.session()))
-                .add_modifier(Modifier::BOLD),
-        )
-        .block(Block::default().borders(Borders::ALL).title(" Pomodoro "));
-    frame.render_widget(paragraph, area);
-}
-
-fn draw_timer(frame: &mut Frame<'_>, app: &App, now_ms: u64, area: Rect) {
-    let seconds = app.state().timer.remaining_seconds(now_ms);
-    let time = format!("{:02}:{:02}", seconds / 60, seconds % 60);
-    let paragraph = Paragraph::new(time)
-        .alignment(Alignment::Center)
-        .style(
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )
-        .block(Block::default().borders(Borders::LEFT | Borders::RIGHT));
-    frame.render_widget(paragraph, area);
-}
-
-fn draw_progress(frame: &mut Frame<'_>, app: &App, now_ms: u64, area: Rect) {
-    let timer = &app.state().timer;
-    let total_ms = timer.config().duration_seconds(timer.session().into()) * 1_000;
-    let remaining_ms = timer.remaining_millis(now_ms).min(total_ms);
-    let elapsed_percent = (total_ms - remaining_ms).saturating_mul(100) / total_ms;
-    let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::LEFT | Borders::RIGHT))
-        .gauge_style(Style::default().fg(session_color(timer.session())))
-        .percent(u16::try_from(elapsed_percent).unwrap_or(100));
-    frame.render_widget(gauge, area);
-}
-
-fn draw_history(frame: &mut Frame<'_>, app: &App, now_ms: u64, area: Rect) {
-    let today = local_date_at(now_ms).unwrap_or_else(|_| "---- -- --".to_owned());
-    let summary = app
-        .state()
-        .history
-        .summary(&today)
-        .copied()
-        .unwrap_or_default();
-    let timer = &app.state().timer;
-    let line = format!(
-        "今日: {}回 / {}分    ラウンド: {}/{}",
-        summary.completed_focus_sessions,
-        summary.focused_seconds / 60,
-        timer.completed_focuses_in_round(),
-        timer.config().focuses_before_long_break()
-    );
-    frame.render_widget(
-        Paragraph::new(line)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::LEFT | Borders::RIGHT)),
-        area,
-    );
-}
-
-fn draw_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let content = if app.show_help() {
-        vec![
-            Line::from("Space: 開始/一時停止/再開   r: リセット   n: スキップ"),
-            Line::from("s: 設定   ?: ヘルプを閉じる   q: 状態を保存して終了"),
-        ]
-    } else if app.message().is_empty() {
-        vec![
-            Line::from(vec![
-                Span::styled("Space", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(": 操作   r: リセット   n: スキップ"),
-            ]),
-            Line::from("s: 設定   ?: ヘルプ   q: 終了"),
-        ]
+fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
+    app: &App<S, C, N>,
+) -> Vec<Line<'_>> {
+    let mut footer = vec![];
+    if app.confirming_unsaved_exit() {
+        footer.push(Line::from(
+            "保存を確認できていない変更があります。未保存のまま終了しますか？",
+        ));
+        footer.push(Line::from("y: 未保存で終了   n / Esc: 戻る"));
+    } else if app.pending_state().is_some() || app.shutdown_failed() {
+        if let Some(pending) = app.pending_state() {
+            let (kind, status, ..) = timer_view(pending.snapshot());
+            footer.push(Line::from(format!(
+                "未確定の保存候補: {} · {status}",
+                session_label(kind)
+            )));
+        }
+        footer.push(Line::from("計時と通常操作を保留しています。"));
+        footer.push(Line::from("r: 保存を再試行   Q: 未保存終了の確認"));
     } else {
-        vec![Line::from(app.message().to_owned())]
-    };
-
-    frame.render_widget(
-        Paragraph::new(content)
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: true })
-            .block(Block::default().borders(Borders::ALL).title(" 操作 ")),
-        area,
-    );
-}
-
-fn draw_settings(frame: &mut Frame<'_>, settings: &SettingsDraft) {
-    let area = centered(frame.area(), 58, 14);
-    let fields = [
-        SettingsField::FocusDuration,
-        SettingsField::ShortBreakDuration,
-        SettingsField::LongBreakDuration,
-        SettingsField::FocusesBeforeLongBreak,
-    ];
-    let mut lines = Vec::with_capacity(7);
-
-    for field in fields {
-        let selected = field == settings.selected();
-        let marker = if selected { "▶" } else { " " };
-        let (label, value) = setting_text(settings, field);
-        let style = if selected {
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::LightCyan)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        lines.push(Line::from(Span::styled(
-            format!(" {marker} {label}: {value} "),
-            style,
-        )));
+        footer.push(Line::from(match &app.state().snapshot().state {
+            ProgressState::AwaitingQuickStartDecision { .. } => {
+                "f: Quick Startを終了   c: Focusへ継続   q: 保存して終了"
+            }
+            ProgressState::Active {
+                timer: TimerState::Interrupted { interruption },
+                ..
+            } if interruption.kind == InterruptionKind::Distraction => {
+                "Space: 作業に戻る（Return）   r: リセット   n: スキップ"
+            }
+            ProgressState::Active {
+                timer: TimerState::Interrupted { .. },
+                ..
+            } => "Space: 再開   r: リセット   n: スキップ",
+            _ => "Space: 開始/一時停止   r: リセット   n: スキップ",
+        }));
+        footer.push(Line::from("s: 設定   ?: ヘルプ   q: 保存して終了"));
+        if app.show_help() {
+            footer.push(Line::from(
+                "設定は待機中のみ変更できます。中断中の時間は加算しません。",
+            ));
+        }
     }
-
-    lines.push(Line::from(""));
-    lines.push(Line::from("↑/↓: 選択   ←/→: 変更   Enter: 保存"));
-    lines.push(Line::from("Esc または s: キャンセル"));
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" 設定 ")
-                    .style(Style::default().bg(Color::Black)),
-            ),
-        area,
-    );
+    if !app.message().is_empty() {
+        footer.push(Line::from(app.message()));
+    }
+    footer
 }
 
-fn setting_text(settings: &SettingsDraft, field: SettingsField) -> (&'static str, String) {
-    match field {
-        SettingsField::FocusDuration => ("集中時間", format_duration(settings.focus_seconds())),
-        SettingsField::ShortBreakDuration => {
-            ("短い休憩", format_duration(settings.short_break_seconds()))
+fn panel(content: String, title: &str) -> Paragraph<'_> {
+    Paragraph::new(content)
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: false })
+        .block(Block::default().borders(Borders::ALL).title(title))
+}
+
+fn timer_view(
+    snapshot: &PomodoroState,
+) -> (SessionKind, &'static str, u64, u64, Option<&CurrentTask>) {
+    match &snapshot.state {
+        ProgressState::Ready {
+            next_kind,
+            current_task_draft,
+        } => {
+            let total = snapshot.settings.duration_seconds(*next_kind) * 1_000;
+            (
+                *next_kind,
+                "待機中",
+                total,
+                total,
+                current_task_draft.as_ref(),
+            )
         }
-        SettingsField::LongBreakDuration => {
-            ("長い休憩", format_duration(settings.long_break_seconds()))
+        ProgressState::Active { session, timer } => {
+            let status = match timer {
+                TimerState::Running { .. } => "実行中",
+                TimerState::Interrupted { interruption } => match interruption.kind {
+                    InterruptionKind::Pause => "一時停止中",
+                    InterruptionKind::Distraction => "脱線中・Return待ち",
+                    InterruptionKind::AppExit => "終了から復元・再開待ち",
+                    InterruptionKind::ObservationGap => "観測空白・再開待ち",
+                },
+            };
+            (
+                session.kind,
+                status,
+                session.remaining_ms(),
+                session.planned_duration_ms,
+                session.current_task.as_ref(),
+            )
         }
-        SettingsField::FocusesBeforeLongBreak => (
-            "長い休憩までの回数",
-            format!("{} 回", settings.focuses_before_long_break()),
+        ProgressState::AwaitingQuickStartDecision { current_task, .. } => (
+            SessionKind::QuickStart,
+            "終了/継続の選択待ち",
+            0,
+            snapshot.settings.duration_seconds(SessionKind::QuickStart) * 1_000,
+            current_task.as_ref(),
         ),
     }
 }
 
-fn format_duration(seconds: u64) -> String {
-    if seconds % 60 == 0 {
-        format!("{} 分", seconds / 60)
-    } else {
-        format!("{}:{:02}", seconds / 60, seconds % 60)
-    }
-}
-
-const fn session_label(session: SessionKind) -> &'static str {
-    match session {
+const fn session_label(kind: SessionKind) -> &'static str {
+    match kind {
         SessionKind::Focus => "集中タイム",
+        SessionKind::QuickStart => "Quick Start",
         SessionKind::ShortBreak => "短い休憩",
         SessionKind::LongBreak => "長い休憩",
-    }
-}
-
-const fn status_label(status: TimerStatus) -> &'static str {
-    match status {
-        TimerStatus::Idle => "待機中",
-        TimerStatus::Running => "実行中",
-        TimerStatus::Paused => "一時停止中",
-    }
-}
-
-const fn session_color(session: SessionKind) -> Color {
-    match session {
-        SessionKind::Focus => Color::LightRed,
-        SessionKind::ShortBreak => Color::LightGreen,
-        SessionKind::LongBreak => Color::LightBlue,
-    }
-}
-
-fn centered(area: Rect, max_width: u16, max_height: u16) -> Rect {
-    let width = area.width.min(max_width);
-    let height = area.height.min(max_height);
-    Rect {
-        x: area.x + area.width.saturating_sub(width) / 2,
-        y: area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
     }
 }

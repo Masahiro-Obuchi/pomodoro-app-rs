@@ -1,332 +1,298 @@
+//! Terminal interaction over the save-confirmed controller. No timing policy or I/O lives here.
+
+use std::fmt::Write as _;
+
 use crossterm::event::KeyCode;
-use pomodoro_core::TimerConfig;
-use pomodoro_core::legacy::{SessionKind, TimerError, TimerEvent, TimerStatus};
-use pomodoro_platform::{NativeStorage, NotifySendNotifier, PersistedState, local_date_at};
+use pomodoro_core::{
+    Command, DomainState, InterruptionKind, ProgressState, QuickStartChoice, SessionKind,
+    SessionOutcome, TimerState,
+};
 
-const DURATION_STEP_SECONDS: u64 = 60;
-const MIN_DURATION_SECONDS: u64 = 60;
-const MAX_DURATION_SECONDS: u64 = 24 * 60 * 60;
-const MAX_FOCUSES_BEFORE_LONG_BREAK: u32 = 99;
+use crate::controller::{
+    Clock, Commit, CompletionNotifier, Controller, ControllerError, ExitOutcome, SaveStore,
+};
+pub use crate::settings::{SettingsDraft, SettingsField};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsField {
-    FocusDuration,
-    ShortBreakDuration,
-    LongBreakDuration,
-    FocusesBeforeLongBreak,
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnsavedExit {
+    None,
+    Confirming,
+    Confirmed,
 }
 
-impl SettingsField {
-    const fn next(self) -> Self {
-        match self {
-            Self::FocusDuration => Self::ShortBreakDuration,
-            Self::ShortBreakDuration => Self::LongBreakDuration,
-            Self::LongBreakDuration => Self::FocusesBeforeLongBreak,
-            Self::FocusesBeforeLongBreak => Self::FocusDuration,
-        }
-    }
-
-    const fn previous(self) -> Self {
-        match self {
-            Self::FocusDuration => Self::FocusesBeforeLongBreak,
-            Self::ShortBreakDuration => Self::FocusDuration,
-            Self::LongBreakDuration => Self::ShortBreakDuration,
-            Self::FocusesBeforeLongBreak => Self::LongBreakDuration,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SettingsDraft {
-    focus_seconds: u64,
-    short_break_seconds: u64,
-    long_break_seconds: u64,
-    focuses_before_long_break: u32,
-    selected: SettingsField,
-}
-
-impl SettingsDraft {
-    fn from_config(config: &TimerConfig) -> Self {
-        Self {
-            focus_seconds: config.focus_seconds(),
-            short_break_seconds: config.short_break_seconds(),
-            long_break_seconds: config.long_break_seconds(),
-            focuses_before_long_break: config.focuses_before_long_break(),
-            selected: SettingsField::FocusDuration,
-        }
-    }
-
-    pub const fn selected(&self) -> SettingsField {
-        self.selected
-    }
-
-    pub const fn focus_seconds(&self) -> u64 {
-        self.focus_seconds
-    }
-
-    pub const fn short_break_seconds(&self) -> u64 {
-        self.short_break_seconds
-    }
-
-    pub const fn long_break_seconds(&self) -> u64 {
-        self.long_break_seconds
-    }
-
-    pub const fn focuses_before_long_break(&self) -> u32 {
-        self.focuses_before_long_break
-    }
-
-    fn select_next(&mut self) {
-        self.selected = self.selected.next();
-    }
-
-    fn select_previous(&mut self) {
-        self.selected = self.selected.previous();
-    }
-
-    fn adjust(&mut self, increase: bool) {
-        match self.selected {
-            SettingsField::FocusDuration => {
-                adjust_duration(&mut self.focus_seconds, increase);
-            }
-            SettingsField::ShortBreakDuration => {
-                adjust_duration(&mut self.short_break_seconds, increase);
-            }
-            SettingsField::LongBreakDuration => {
-                adjust_duration(&mut self.long_break_seconds, increase);
-            }
-            SettingsField::FocusesBeforeLongBreak => {
-                self.focuses_before_long_break = if increase {
-                    self.focuses_before_long_break
-                        .saturating_add(1)
-                        .min(MAX_FOCUSES_BEFORE_LONG_BREAK)
-                } else {
-                    self.focuses_before_long_break.saturating_sub(1).max(1)
-                };
-            }
-        }
-    }
-
-    fn build_config(&self) -> Result<TimerConfig, pomodoro_core::ConfigError> {
-        TimerConfig::new(
-            self.focus_seconds,
-            self.short_break_seconds,
-            self.long_break_seconds,
-            self.focuses_before_long_break,
-        )
-    }
-}
-
-fn adjust_duration(seconds: &mut u64, increase: bool) {
-    *seconds = if increase {
-        seconds
-            .saturating_add(DURATION_STEP_SECONDS)
-            .min(MAX_DURATION_SECONDS)
-    } else {
-        seconds
-            .saturating_sub(DURATION_STEP_SECONDS)
-            .max(MIN_DURATION_SECONDS)
-    };
-}
-
-pub struct App {
-    state: PersistedState,
-    storage: NativeStorage,
-    should_quit: bool,
+pub struct App<S, C, N> {
+    controller: Controller<S, C, N>,
     show_help: bool,
     settings: Option<SettingsDraft>,
     message: String,
+    unsaved_exit: UnsavedExit,
+    shutdown_failed: bool,
 }
 
-impl App {
-    pub fn new(state: PersistedState, storage: NativeStorage) -> Self {
+impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
+    #[must_use]
+    pub fn new(controller: Controller<S, C, N>) -> Self {
         Self {
-            state,
-            storage,
-            should_quit: false,
+            controller,
             show_help: false,
             settings: None,
             message: String::new(),
+            unsaved_exit: UnsavedExit::None,
+            shutdown_failed: false,
         }
     }
 
-    pub const fn state(&self) -> &PersistedState {
-        &self.state
+    #[must_use]
+    pub fn state(&self) -> &DomainState {
+        self.controller.state()
     }
 
+    #[must_use]
+    pub fn pending_state(&self) -> Option<&DomainState> {
+        self.controller.pending_state()
+    }
+
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    #[must_use]
     pub const fn show_help(&self) -> bool {
         self.show_help
     }
 
+    #[must_use]
     pub const fn settings(&self) -> Option<&SettingsDraft> {
         self.settings.as_ref()
     }
 
-    pub const fn should_quit(&self) -> bool {
-        self.should_quit
+    #[must_use]
+    pub const fn confirming_unsaved_exit(&self) -> bool {
+        matches!(self.unsaved_exit, UnsavedExit::Confirming)
     }
 
-    pub fn tick(&mut self, now_ms: u64) {
-        if let Some(event) = self.state.timer.tick(now_ms) {
-            self.on_timer_event(event);
-            self.save();
+    #[must_use]
+    pub const fn shutdown_failed(&self) -> bool {
+        self.shutdown_failed
+    }
+
+    #[must_use]
+    pub fn should_quit(&self) -> bool {
+        self.unsaved_exit == UnsavedExit::Confirmed || self.controller.is_closed()
+    }
+
+    /// Releases the controller and its lock; unsaved exits never become saved exits.
+    #[must_use]
+    pub fn exit(self) -> ExitOutcome {
+        self.controller.exit()
+    }
+
+    pub fn tick(&mut self) {
+        if self.should_quit() || self.pending_state().is_some() || self.shutdown_failed {
+            return;
+        }
+        match self.controller.tick() {
+            Ok(Some(commit)) => self.on_commit(commit),
+            Ok(None) => {}
+            Err(error) => self.on_error(&error),
         }
     }
 
-    pub fn handle_key(&mut self, key: KeyCode, now_ms: u64) {
-        self.message.clear();
-        if self.settings.is_some() {
-            if self.handle_settings_key(key) {
-                self.save();
+    pub fn handle_key(&mut self, key: KeyCode) {
+        if self.should_quit() {
+            return;
+        }
+        if self.confirming_unsaved_exit() {
+            match key {
+                KeyCode::Char('y') => self.unsaved_exit = UnsavedExit::Confirmed,
+                KeyCode::Esc | KeyCode::Char('n') => self.unsaved_exit = UnsavedExit::None,
+                _ => {}
             }
             return;
         }
-
+        if key == KeyCode::Char('?') {
+            self.show_help = !self.show_help;
+            return;
+        }
+        if self.pending_state().is_some() || self.shutdown_failed {
+            match key {
+                KeyCode::Char('r') => {
+                    let result = if self.pending_state().is_some() {
+                        self.controller.retry()
+                    } else {
+                        self.controller.shutdown()
+                    };
+                    match result {
+                        Ok(commit) => {
+                            self.shutdown_failed = false;
+                            self.on_commit(commit);
+                        }
+                        Err(error) => self.on_error(&error),
+                    }
+                }
+                KeyCode::Char('Q') => self.unsaved_exit = UnsavedExit::Confirming,
+                _ => {}
+            }
+            return;
+        }
+        if self.settings.is_some() {
+            self.handle_settings_key(key);
+            return;
+        }
         match key {
-            KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Char('?') => self.show_help = !self.show_help,
-            KeyCode::Char(' ') => self.toggle_timer(now_ms),
-            KeyCode::Char('r') => {
-                self.state.timer.reset();
-                "現在のセッションをリセットしました".clone_into(&mut self.message);
-            }
-            KeyCode::Char('n') => {
-                let event = self.state.timer.skip();
-                self.on_timer_event(event);
-                "次のセッションへ移動しました".clone_into(&mut self.message);
-            }
+            KeyCode::Char('q') => match self.controller.shutdown() {
+                Ok(commit) => self.on_commit(commit),
+                Err(error) => {
+                    self.shutdown_failed = true;
+                    self.on_error(&error);
+                }
+            },
             KeyCode::Char('s') => self.open_settings(),
-            _ => return,
-        }
-        self.save();
-    }
-
-    pub fn save(&mut self) {
-        if let Err(error) = self.storage.save(&self.state) {
-            self.message = format!("保存に失敗しました: {error}");
-        }
-    }
-
-    fn toggle_timer(&mut self, now_ms: u64) {
-        let result = match self.state.timer.status() {
-            TimerStatus::Idle => self.state.timer.start(now_ms),
-            TimerStatus::Running => self.state.timer.pause(now_ms),
-            TimerStatus::Paused => self.state.timer.resume(now_ms),
-        };
-        if let Err(error) = result {
-            if error == TimerError::SessionAlreadyElapsed {
-                self.tick(now_ms);
-            } else {
-                self.message = format!("操作できませんでした: {error}");
+            _ => {
+                if let Some(command) = self.command_for_key(key) {
+                    match self.controller.execute(command) {
+                        Ok(commit) => self.on_commit(commit),
+                        Err(error) => self.on_error(&error),
+                    }
+                }
             }
+        }
+    }
+
+    // Resolve against the state the user sees, before execute observes time.
+    // Controller discards this command if that observation completes the session.
+    fn command_for_key(&self, key: KeyCode) -> Option<Command> {
+        match (&self.state().snapshot().state, key) {
+            (ProgressState::Ready { next_kind, .. }, KeyCode::Char(' ')) => {
+                Some(Command::Start(*next_kind))
+            }
+            (ProgressState::Ready { .. }, KeyCode::Char('r')) => Some(Command::ResetReady),
+            (ProgressState::Ready { .. }, KeyCode::Char('n')) => Some(Command::SkipReady),
+            (ProgressState::Active { session, timer }, KeyCode::Char(' ')) => Some(match timer {
+                TimerState::Running { .. } => Command::Pause(session.id),
+                TimerState::Interrupted { interruption }
+                    if interruption.kind == InterruptionKind::Distraction =>
+                {
+                    Command::Return(session.id)
+                }
+                TimerState::Interrupted { .. } => Command::Resume(session.id),
+            }),
+            (ProgressState::Active { session, .. }, KeyCode::Char(key @ ('r' | 'n'))) => {
+                Some(Command::End {
+                    session_id: session.id,
+                    outcome: if key == 'r' {
+                        SessionOutcome::Reset
+                    } else {
+                        SessionOutcome::Skipped
+                    },
+                })
+            }
+            (
+                ProgressState::AwaitingQuickStartDecision {
+                    quick_start_session_id,
+                    ..
+                },
+                KeyCode::Char(key @ ('c' | 'f')),
+            ) => Some(Command::DecideQuickStart {
+                session_id: *quick_start_session_id,
+                choice: if key == 'c' {
+                    QuickStartChoice::Continue
+                } else {
+                    QuickStartChoice::Finish
+                },
+            }),
+            _ => None,
         }
     }
 
     fn open_settings(&mut self) {
-        if self.state.timer.status() == TimerStatus::Idle {
-            self.settings = Some(SettingsDraft::from_config(self.state.timer.config()));
+        if matches!(self.state().snapshot().state, ProgressState::Ready { .. }) {
+            self.settings = Some(SettingsDraft::from_config(
+                &self.state().snapshot().settings,
+            ));
             self.show_help = false;
+            self.message.clear();
         } else {
-            "設定は待機中のみ変更できます。現在のセッションをリセットしてください。"
-                .clone_into(&mut self.message);
+            "設定は待機中のみ変更できます。".clone_into(&mut self.message);
         }
     }
 
-    fn handle_settings_key(&mut self, key: KeyCode) -> bool {
+    fn handle_settings_key(&mut self, key: KeyCode) {
+        let draft = self.settings.as_mut().expect("settings are open");
         match key {
             KeyCode::Esc | KeyCode::Char('s') => {
                 self.settings = None;
                 "設定の変更をキャンセルしました".clone_into(&mut self.message);
-                false
             }
-            KeyCode::Up | KeyCode::BackTab => {
-                self.settings
-                    .as_mut()
-                    .expect("settings are open")
-                    .select_previous();
-                false
-            }
-            KeyCode::Down | KeyCode::Tab => {
-                self.settings
-                    .as_mut()
-                    .expect("settings are open")
-                    .select_next();
-                false
-            }
-            KeyCode::Left | KeyCode::Char('-') => {
-                self.settings
-                    .as_mut()
-                    .expect("settings are open")
-                    .adjust(false);
-                false
-            }
-            KeyCode::Right | KeyCode::Char('+' | '=') => {
-                self.settings
-                    .as_mut()
-                    .expect("settings are open")
-                    .adjust(true);
-                false
-            }
-            KeyCode::Enter => self.apply_settings(),
-            _ => false,
+            KeyCode::Up | KeyCode::BackTab => draft.select_previous(),
+            KeyCode::Down | KeyCode::Tab => draft.select_next(),
+            KeyCode::Left | KeyCode::Char('-') => draft.adjust(false),
+            KeyCode::Right | KeyCode::Char('+' | '=') => draft.adjust(true),
+            KeyCode::Enter => match draft.build_config() {
+                Ok(config) => match self.controller.execute(Command::Configure(config)) {
+                    Ok(commit) => {
+                        self.settings = None;
+                        self.on_commit(commit);
+                    }
+                    Err(error) => {
+                        if self.pending_state().is_some() {
+                            self.settings = None;
+                        }
+                        self.on_error(&error);
+                    }
+                },
+                Err(error) => self.message = format!("設定を適用できませんでした: {error}"),
+            },
+            _ => {}
         }
     }
 
-    fn apply_settings(&mut self) -> bool {
-        let draft = self.settings.take().expect("settings are open");
-        let result = draft
-            .build_config()
-            .map_err(TimerError::from)
-            .and_then(|config| self.state.timer.reconfigure(config));
-
-        match result {
-            Ok(()) => {
-                "設定を保存し、現在のセッションとラウンドをリセットしました"
-                    .clone_into(&mut self.message);
-                true
-            }
-            Err(error) => {
-                self.settings = Some(draft);
-                self.message = format!("設定を適用できませんでした: {error}");
-                false
-            }
-        }
-    }
-
-    fn on_timer_event(&mut self, event: TimerEvent) {
-        let TimerEvent::SessionCompleted {
-            session,
-            completed_at_ms,
-            ..
-        } = event
-        else {
-            return;
-        };
-
-        match local_date_at(completed_at_ms) {
-            Ok(date) => {
-                if let Err(error) = self.state.history.record_event(&date, &event) {
-                    self.message = format!("履歴の更新に失敗しました: {error}");
-                }
-            }
-            Err(error) => self.message = format!("完了日時を変換できませんでした: {error}"),
-        }
-
-        if let Err(error) = NotifySendNotifier.session_completed(session) {
-            self.message = format!("セッションは完了しました（通知失敗: {error}）");
+    fn on_error(&mut self, error: &ControllerError) {
+        self.message = if self.pending_state().is_some() || self.shutdown_failed {
+            format!("保存を確認できませんでした: {error}")
         } else {
-            completion_message(session).clone_into(&mut self.message);
+            format!("操作できませんでした: {error}")
+        };
+    }
+
+    fn on_commit(&mut self, commit: Commit) {
+        if let Some(kind) = commit.completed {
+            completion_message(kind).clone_into(&mut self.message);
+        } else if let Some(command) = commit.command {
+            command_message(&command).clone_into(&mut self.message);
+        } else if self.pending_state().is_none() {
+            // A checkpoint/recovery may clear an earlier error but is not an input success.
+            self.message.clear();
+        }
+        if let Some(error) = commit.notification_error {
+            let _ = write!(self.message, "（通知失敗: {error}）");
         }
     }
 }
 
-const fn completion_message(session: SessionKind) -> &'static str {
-    match session {
+fn command_message(command: &Command) -> &'static str {
+    match command {
+        Command::Configure(_) => "設定を保存し、ラウンドをリセットしました。",
+        Command::Start(_) => "開始操作を保存しました。",
+        Command::Pause(_) => "一時停止しました。",
+        Command::Resume(_) | Command::Return(_) => "復帰操作を保存しました。",
+        Command::End {
+            outcome: SessionOutcome::Reset,
+            ..
+        }
+        | Command::ResetReady => "開始待ちに戻しました。次の開始は新しいセッションになります。",
+        Command::End { .. } | Command::SkipReady => "次のセッションの開始待ちへ移動しました。",
+        Command::DecideQuickStart { .. } => "Quick Startの選択を保存しました。",
+        Command::CloseApp => "状態を保存しました。終了します。",
+        _ => "操作を保存しました。",
+    }
+}
+
+const fn completion_message(kind: SessionKind) -> &'static str {
+    match kind {
         SessionKind::Focus => "集中タイムが完了しました。休憩しましょう！",
+        SessionKind::QuickStart => "Quick Startが完了しました。終了または継続を選んでください。",
         SessionKind::ShortBreak | SessionKind::LongBreak => {
             "休憩が完了しました。次の集中タイムを始められます。"
         }
@@ -334,83 +300,4 @@ const fn completion_message(session: SessionKind) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    use pomodoro_core::TimerConfig;
-
-    use super::*;
-
-    static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-    fn app() -> App {
-        let test_id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-        let storage_path = std::env::temp_dir().join(format!(
-            "pomodoro-tui-test-{}-{test_id}.json",
-            std::process::id()
-        ));
-        App::new(
-            PersistedState::new(TimerConfig::default()).unwrap(),
-            NativeStorage::at(storage_path),
-        )
-    }
-
-    #[test]
-    fn space_toggles_start_pause_and_resume() {
-        let mut app = app();
-
-        app.toggle_timer(0);
-        assert_eq!(app.state.timer.status(), TimerStatus::Running);
-        app.toggle_timer(1_000);
-        assert_eq!(app.state.timer.status(), TimerStatus::Paused);
-        app.toggle_timer(2_000);
-        assert_eq!(app.state.timer.status(), TimerStatus::Running);
-    }
-
-    #[test]
-    fn skip_moves_to_the_next_session_without_history() {
-        let mut app = app();
-
-        app.handle_key(KeyCode::Char('n'), 0);
-
-        assert_eq!(app.state.timer.session(), SessionKind::ShortBreak);
-        assert!(app.state.history.days().is_empty());
-    }
-
-    #[test]
-    fn settings_can_be_edited_and_applied_while_idle() {
-        let mut app = app();
-
-        app.handle_key(KeyCode::Char('s'), 0);
-        assert_eq!(
-            app.settings().map(SettingsDraft::selected),
-            Some(SettingsField::FocusDuration)
-        );
-
-        app.handle_key(KeyCode::Right, 0);
-        app.handle_key(KeyCode::Down, 0);
-        app.handle_key(KeyCode::Left, 0);
-        app.handle_key(KeyCode::Enter, 0);
-
-        assert!(app.settings().is_none());
-        assert_eq!(app.state.timer.config().focus_seconds(), 26 * 60);
-        assert_eq!(app.state.timer.config().short_break_seconds(), 4 * 60);
-        assert_eq!(app.state.timer.status(), TimerStatus::Idle);
-        assert_eq!(app.state.timer.remaining_seconds(0), 26 * 60);
-
-        let restored = app.storage.load().unwrap().unwrap();
-        assert_eq!(restored.timer.config().focus_seconds(), 26 * 60);
-        assert_eq!(restored.timer.config().short_break_seconds(), 4 * 60);
-    }
-
-    #[test]
-    fn settings_cannot_open_while_timer_is_running() {
-        let mut app = app();
-        app.toggle_timer(0);
-
-        app.handle_key(KeyCode::Char('s'), 0);
-
-        assert!(app.settings().is_none());
-        assert!(app.message().contains("待機中"));
-    }
-}
+mod tests;
