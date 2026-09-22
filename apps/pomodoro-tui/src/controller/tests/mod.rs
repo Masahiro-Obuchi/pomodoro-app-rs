@@ -203,3 +203,4 @@ fn assert_valid(domain: &DomainState) {
 
 mod operations;
 mod recovery;
+mod shutdown;

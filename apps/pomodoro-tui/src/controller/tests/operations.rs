@@ -42,7 +42,6 @@ fn no_op_commands_do_not_save_or_block_input_even_when_storage_would_fail() {
         Command::ResetReady,
         Command::SetCurrentTask(task),
         Command::Configure(domain.snapshot().settings),
-        Command::CloseApp,
         Command::RestoreApp,
     ];
     let mut controller = controller(domain.clone(), 0);
