@@ -9,7 +9,7 @@ mod startup;
 pub use error::ControllerError;
 pub use ports::{Clock, CompletionNotifier, SaveStore};
 pub use shutdown::ExitOutcome;
-pub use startup::{Startup, StartupError, StartupSave};
+pub use startup::{Startup, StartupError, StartupSave, StartupSaveError};
 
 use pomodoro_core::{
     Command, DomainState, Observation, PomodoroState, ProgressState, SessionKind, SessionOutcome,

@@ -120,15 +120,13 @@ impl Clock for TestClock {
 fn new_startup_saves_before_controller_adoption_and_holds_the_lock_through_exit() {
     let dir = tempfile::tempdir().unwrap();
     let location = StorageLocation::at(dir.path().to_owned());
-    let mut startup = prepare(&location, 100);
-    assert_eq!(startup.pending_state(), Some(&ready()));
+    let startup = prepare(&location, 100);
+    assert_eq!(startup.pending_state(), &ready());
     assert!(!location.state_path().exists());
     assert_locked(&location);
     let store = startup.save().unwrap();
     assert_eq!(store.saved_state().unwrap().save_generation(), 1);
     assert_eq!(store.saved_state().unwrap().saved_at(), Timestamp(100));
-    assert!(startup.pending_state().is_none());
-    assert!(matches!(startup.save(), Err(SaveError::NoPendingSave)));
     let clock = TestClock {
         at: 100,
         times: [200].into(),
@@ -154,7 +152,7 @@ fn every_running_kind_restores_as_gap_without_crediting_downtime() {
         let location = StorageLocation::at(dir.path().to_owned());
         let original = running(kind);
         seed(&location, &original);
-        let mut startup = prepare(&location, 1_000_000);
+        let startup = prepare(&location, 1_000_000);
         let store = startup.save().unwrap();
         let domain = store.saved_state().unwrap().domain();
         let ProgressState::Active {
@@ -262,11 +260,13 @@ fn startup_save_failure_retries_one_restore_and_timestamp_with_no_input_permit()
     seed(&location, &running(SessionKind::Focus));
     let original = fs::read(location.state_path()).unwrap();
     let mut startup = prepare(&location, 2_000);
-    let fixed = startup.pending_state().unwrap().clone();
+    let fixed = startup.pending_state().clone();
     fs::create_dir(location.backup_path()).unwrap();
     for _ in 0..2 {
-        assert!(startup.save().is_err());
-        assert_eq!(startup.pending_state(), Some(&fixed));
+        let failure = startup.save().unwrap_err();
+        assert_locked(&location);
+        startup = failure.startup;
+        assert_eq!(startup.pending_state(), &fixed);
         assert_eq!(fs::read(location.state_path()).unwrap(), original);
         assert_locked(&location);
     }
@@ -284,10 +284,11 @@ fn initial_save_failure_before_native_candidate_creation_can_retry_or_exit_unsav
     for retry in [true, false] {
         let dir = tempfile::tempdir().unwrap();
         let location = StorageLocation::at(dir.path().to_owned());
-        let mut startup = prepare(&location, 100);
+        let startup = prepare(&location, 100);
         fs::create_dir(location.state_path()).unwrap();
-        assert!(startup.save().is_err());
-        assert_eq!(startup.pending_state(), Some(&ready()));
+        let failure = startup.save().unwrap_err();
+        let startup = failure.startup;
+        assert_eq!(startup.pending_state(), &ready());
         assert_locked(&location);
         fs::remove_dir(location.state_path()).unwrap();
         if retry {
@@ -340,12 +341,18 @@ fn confirmed_recovery_retries_once_then_adopts_without_a_second_restore() {
         panic!("recovery offer expected");
     };
     let mut startup = StartupSave::confirm_recovery(*candidate, Timestamp(3_000)).unwrap();
-    let fixed = startup.pending_state().unwrap().clone();
+    let fixed = startup.pending_state().clone();
     assert_eq!(restored_count(&fixed), 1);
     fs::write(location.backup_path(), b"external modification").unwrap();
     for _ in 0..2 {
-        assert!(startup.save().is_err());
-        assert_eq!(startup.pending_state(), Some(&fixed));
+        let failure = startup.save().unwrap_err();
+        assert!(matches!(
+            failure.error.failure(),
+            SaveError::Conflict { .. }
+        ));
+        assert_locked(&location);
+        startup = failure.startup;
+        assert_eq!(startup.pending_state(), &fixed);
         assert_locked(&location);
         assert_eq!(fs::read(location.state_path()).unwrap(), b"broken primary");
     }
@@ -374,6 +381,40 @@ fn confirmed_recovery_retries_once_then_adopts_without_a_second_restore() {
     assert!(controller.tick().unwrap().is_none());
     assert_eq!(controller.saved_state(), &fixed);
     assert_eq!(restored_count(controller.state()), 1);
+}
+
+#[test]
+fn failed_recovery_returns_ownership_for_an_explicit_unsaved_exit() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = StorageLocation::at(dir.path().to_owned());
+    let backup = recovery_files(&location);
+    let Startup::RecoveryRequired(candidate) =
+        Startup::open(location.clone(), settings(), Timestamp(2_000)).unwrap()
+    else {
+        panic!("recovery offer expected");
+    };
+    let startup = StartupSave::confirm_recovery(*candidate, Timestamp(3_000)).unwrap();
+    let fixed = startup.pending_state().clone();
+    fs::write(location.backup_path(), b"external modification").unwrap();
+    let failure = startup.save().unwrap_err();
+    assert!(matches!(
+        failure.error.failure(),
+        SaveError::Conflict { .. }
+    ));
+    assert_eq!(failure.startup.pending_state(), &fixed);
+    assert_locked(&location);
+    assert_eq!(
+        Startup::Saving(failure.startup).cancel(),
+        ExitOutcome::Unsaved
+    );
+    assert_eq!(fs::read(location.state_path()).unwrap(), b"broken primary");
+    assert_eq!(
+        fs::read(location.backup_path()).unwrap(),
+        b"external modification"
+    );
+    let lock = location.clone().lock().unwrap();
+    fs::write(location.backup_path(), backup).unwrap();
+    drop(lock);
 }
 
 #[test]

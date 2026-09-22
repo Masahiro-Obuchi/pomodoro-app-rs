@@ -57,7 +57,7 @@ impl Startup {
             .apply(Command::RestoreApp, at)
             .map_err(StartupError::Domain)?;
         Ok(Self::Saving(StartupSave {
-            pending: Some(Box::new(StartupCandidate::Normal { store, domain, at })),
+            pending: Box::new(StartupCandidate::Normal { store, domain, at }),
         }))
     }
 
@@ -87,7 +87,7 @@ enum StartupCandidate {
 #[derive(Debug)]
 #[must_use = "retain the startup candidate and its lock until saved or explicitly abandoned"]
 pub struct StartupSave {
-    pending: Option<Box<StartupCandidate>>,
+    pending: Box<StartupCandidate>,
 }
 
 impl StartupSave {
@@ -102,56 +102,69 @@ impl StartupSave {
         at: Timestamp,
     ) -> Result<Self, SaveError> {
         Ok(Self {
-            pending: Some(Box::new(StartupCandidate::Recovery(candidate.confirm(at)?))),
+            pending: Box::new(StartupCandidate::Recovery(candidate.confirm(at)?)),
         })
     }
 
     /// The fixed startup candidate for a pending-save display, not normal input.
+    ///
+    /// # Panics
+    /// Panics if native recovery discards its candidate before a successful save.
     #[must_use]
-    pub fn pending_state(&self) -> Option<&DomainState> {
-        match self.pending.as_deref()? {
-            StartupCandidate::Normal { domain, .. } => Some(domain),
+    pub fn pending_state(&self) -> &DomainState {
+        match self.pending.as_ref() {
+            StartupCandidate::Normal { domain, .. } => domain,
             StartupCandidate::Recovery(recovery) => recovery
                 .pending_save()
-                .map(pomodoro_platform::PendingSave::domain),
+                .expect("startup retains an unsaved recovery candidate")
+                .domain(),
         }
     }
 
     /// Saves/retries without changing IDs, domain data or the candidate timestamp.
     /// Only success returns the locked store for `Controller::from_saved`; use a
     /// fresh runtime clock for that controller. No startup completion is notified.
+    /// Consumes this operation: after success, only the returned store owns the
+    /// lifecycle and lock; the old operation cannot retry, cancel or report exit.
+    ///
+    /// ```compile_fail,E0382
+    /// use pomodoro_tui::controller::StartupSave;
+    /// fn cannot_exit_after_handoff(startup: StartupSave) {
+    ///     let store = startup.save().unwrap();
+    ///     let outcome = startup.exit_without_saving(); // already moved into save
+    /// }
+    /// ```
     ///
     /// # Errors
-    /// Save errors retain the candidate and lock. After success, further calls
-    /// return `NoPendingSave` and cannot create another startup generation.
-    pub fn save(&mut self) -> Result<WritableStorage, SaveError> {
-        let pending = self
-            .pending
-            .as_deref_mut()
-            .ok_or(SaveError::NoPendingSave)?;
-        match pending {
+    /// Returns the error and the same startup operation, retaining its candidate
+    /// and lock for retry or explicit unsaved exit. Do not reload or restore again.
+    pub fn save(mut self) -> Result<WritableStorage, StartupSaveError> {
+        let result = match self.pending.as_mut() {
             StartupCandidate::Normal { store, domain, at } => {
-                if store.pending_save().is_some() {
-                    store.retry_pending()?;
+                let result = if store.pending_save().is_some() {
+                    store.retry_pending()
                 } else {
                     // Failures before native candidate creation still retry the
                     // application's original RestoreApp and timestamp.
-                    store.save(domain, *at)?;
-                }
+                    store.save(domain, *at)
+                };
+                result.map(|_| None)
             }
-            StartupCandidate::Recovery(recovery) => {
-                let store = recovery.save()?;
-                self.pending = None;
-                return Ok(store);
+            StartupCandidate::Recovery(recovery) => recovery.save().map(Some),
+        };
+        match result {
+            Ok(Some(store)) => Ok(store),
+            Ok(None) => {
+                let StartupCandidate::Normal { store, .. } = *self.pending else {
+                    unreachable!("normal startup was saved")
+                };
+                Ok(store)
             }
+            Err(error) => Err(StartupSaveError {
+                error,
+                startup: self,
+            }),
         }
-        let Some(pending) = self.pending.take() else {
-            unreachable!("normal startup was saved")
-        };
-        let StartupCandidate::Normal { store, .. } = *pending else {
-            unreachable!("normal startup was saved")
-        };
-        Ok(store)
     }
 
     /// Explicitly abandons startup, releasing its lock. An uncertain rename is
@@ -159,6 +172,27 @@ impl StartupSave {
     #[must_use]
     pub fn exit_without_saving(self) -> ExitOutcome {
         ExitOutcome::Unsaved
+    }
+}
+
+/// Save failure together with ownership of the unchanged startup operation.
+/// Keep `startup` alive while displaying `error`; dropping it releases the lock.
+#[derive(Debug)]
+#[must_use = "retain startup to retry, or explicitly choose an unsaved exit"]
+pub struct StartupSaveError {
+    pub error: SaveError,
+    pub startup: StartupSave,
+}
+
+impl fmt::Display for StartupSaveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "startup save failed: {}", self.error)
+    }
+}
+
+impl Error for StartupSaveError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.error)
     }
 }
 
