@@ -122,44 +122,11 @@ impl DomainState {
     /// # Errors
     /// Returns an error if the total work duration exceeds its integer range.
     pub fn reflection(&self) -> Result<ReflectionSummary, DomainError> {
-        let mut summary = ReflectionSummary::default();
-        let active = match &self.snapshot.state {
-            ProgressState::Active { session, .. } => Some(session),
-            _ => None,
-        };
-        for session in self.history.sessions.iter().chain(active) {
-            if session.kind.is_work() {
-                summary.work_ms = summary
-                    .work_ms
-                    .checked_add(session.elapsed_ms)
-                    .ok_or(DomainError::Overflow)?;
-            }
-            if session.kind == SessionKind::Focus
-                && session
-                    .end
-                    .is_some_and(|end| end.outcome == SessionOutcome::Completed)
-            {
-                summary.completed_focus_sessions += 1;
-            }
+        let summary = self.history.reflection()?;
+        match &self.snapshot.state {
+            ProgressState::Active { session, .. } => summary.including_session(session),
+            _ => Ok(summary),
         }
-        for event in &self.history.events {
-            match event.payload {
-                EventKind::InterruptionStarted {
-                    interruption_kind: InterruptionKind::Distraction,
-                    ..
-                } => summary.distractions += 1,
-                EventKind::InterruptionEnded {
-                    end:
-                        InterruptionEnd {
-                            outcome: InterruptionOutcome::Returned,
-                            ..
-                        },
-                    ..
-                } => summary.returns += 1,
-                _ => {}
-            }
-        }
-        Ok(summary)
     }
 
     // Transitions only append history. Rollback clones the small snapshot, not

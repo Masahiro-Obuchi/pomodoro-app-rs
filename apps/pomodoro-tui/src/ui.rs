@@ -25,7 +25,7 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
-        Constraint::Length(3),
+        Constraint::Length(4),
         Constraint::Min(6),
     ])
     .split(centered(frame.area(), 82, 25));
@@ -61,11 +61,13 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
             .percent(u16::try_from(percent).unwrap_or(100)),
         sections[2],
     );
-    let history = match app.state().reflection() {
+    let history = match app.reflection() {
         Ok(summary) => format!(
-            "累計: 集中完了 {}回 / 作業 {}分   ラウンド: {}/{}",
+            "累計: 集中完了 {}回 / 作業 {}分\n脱線 {}回 / 復帰 {}回   ラウンド: {}/{}",
             summary.completed_focus_sessions,
             summary.work_ms / 60_000,
+            summary.distractions,
+            summary.returns,
             snapshot.round_progress.completed_focuses_in_round,
             snapshot.settings.focuses_before_long_break(),
         ),

@@ -1,17 +1,20 @@
 //! Terminal interaction over the save-confirmed controller. No timing policy or I/O lives here.
 
-use std::fmt::Write as _;
+use std::{cell::RefCell, fmt::Write as _};
 
 use crossterm::event::KeyCode;
 use pomodoro_core::{
-    Command, DomainState, InterruptionKind, ProgressState, QuickStartChoice, SessionKind,
-    SessionOutcome, TimerState,
+    Command, DomainError, DomainState, InterruptionKind, ProgressState, QuickStartChoice,
+    ReflectionSummary, SessionKind, SessionOutcome, TimerState,
 };
 
 use crate::controller::{
     Clock, Commit, CompletionNotifier, Controller, ControllerError, ExitOutcome, SaveStore,
 };
 pub use crate::settings::{SettingsDraft, SettingsField};
+
+mod reflection;
+use reflection::HistoryReflection;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum UnsavedExit {
@@ -22,6 +25,7 @@ enum UnsavedExit {
 
 pub struct App<S, C, N> {
     controller: Controller<S, C, N>,
+    history_reflection: RefCell<HistoryReflection>,
     show_help: bool,
     settings: Option<SettingsDraft>,
     message: String,
@@ -34,6 +38,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     pub fn new(controller: Controller<S, C, N>) -> Self {
         Self {
             controller,
+            history_reflection: RefCell::default(),
             show_help: false,
             settings: None,
             message: String::new(),
@@ -45,6 +50,15 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     #[must_use]
     pub fn state(&self) -> &DomainState {
         self.controller.state()
+    }
+
+    /// Reflects the displayed state, keeping pending saves out of the summary.
+    /// History is cached separately from the active session's live elapsed time.
+    ///
+    /// # Errors
+    /// Returns an error when the total work duration exceeds its integer range.
+    pub fn reflection(&self) -> Result<ReflectionSummary, DomainError> {
+        self.history_reflection.borrow_mut().get(self.state())
     }
 
     #[must_use]
@@ -280,8 +294,8 @@ fn command_message(command: &Command) -> &'static str {
         Command::End {
             outcome: SessionOutcome::Reset,
             ..
-        }
-        | Command::ResetReady => "開始待ちに戻しました。次の開始は新しいセッションになります。",
+        } => "開始待ちに戻しました。次の開始は新しいセッションになります。",
+        Command::ResetReady => "すでに開始待ちです。状態は変更していません。",
         Command::End { .. } | Command::SkipReady => "次のセッションの開始待ちへ移動しました。",
         Command::DecideQuickStart { .. } => "Quick Startの選択を保存しました。",
         Command::CloseApp => "状態を保存しました。終了します。",

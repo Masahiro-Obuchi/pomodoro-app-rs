@@ -5,6 +5,7 @@ mod domain;
 pub mod legacy;
 mod model;
 mod observation;
+mod reflection;
 mod validation;
 
 pub use config::{ConfigError, TimerConfig};
