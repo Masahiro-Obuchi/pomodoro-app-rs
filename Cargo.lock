@@ -962,6 +962,7 @@ dependencies = [
  "pomodoro-core",
  "pomodoro-platform",
  "ratatui",
+ "tempfile",
 ]
 
 [[package]]
