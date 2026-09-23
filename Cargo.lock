@@ -961,6 +961,7 @@ dependencies = [
  "ratatui",
  "rustix",
  "tempfile",
+ "unicode-segmentation",
 ]
 
 [[package]]

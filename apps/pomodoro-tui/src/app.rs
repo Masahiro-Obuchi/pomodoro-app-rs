@@ -7,6 +7,7 @@ use pomodoro_core::{
     Command, CurrentTask, DomainError, DomainState, ProgressState, ReflectionSummary, SessionKind,
     SessionOutcome,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::controller::{
     Clock, Commit, CompletionNotifier, Controller, ControllerError, ExitOutcome, SaveStore,
@@ -265,7 +266,10 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
                 self.message = "Task edit canceled.".into();
             }
             KeyCode::Backspace => {
-                self.task_edit.as_mut().expect("task editor is open").pop();
+                let draft = self.task_edit.as_mut().expect("task editor is open");
+                if let Some((index, _)) = draft.as_str().grapheme_indices(true).next_back() {
+                    draft.truncate(index);
+                }
                 self.message.clear();
             }
             KeyCode::Enter => self.confirm_task(),
@@ -283,6 +287,8 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     fn paste_task(&mut self, text: &str) {
         if text.chars().any(is_line_separator) {
             self.message = "Task must be a single line; paste was rejected.".into();
+        } else if text.chars().any(char::is_control) {
+            self.message = "Task cannot contain control characters; paste was rejected.".into();
         } else {
             self.task_edit
                 .as_mut()

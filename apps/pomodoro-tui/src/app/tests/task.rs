@@ -80,10 +80,37 @@ fn task_editor_accepts_blank_and_blocks_commands_and_modified_characters() {
     assert_eq!(h.app.task_edit(), Some("q?2ns "));
     h.app.handle_key(KeyCode::Esc);
     press(&mut h.app, 't');
-    h.app.handle_event(Event::Paste(" \t ".into()));
+    h.app.handle_event(Event::Paste("   ".into()));
     h.app.handle_key(KeyCode::Enter);
     assert!(draft(&h.app).is_none());
     assert!(h.log.borrow().is_empty());
+}
+
+#[test]
+fn pasted_control_characters_are_rejected_without_changing_the_draft() {
+    let mut h = harness(ready(), 0);
+    press(&mut h.app, 't');
+    h.app.handle_event(Event::Paste("safe".into()));
+    for text in ["a\tb", "a\u{001b}[31mb", "a\u{0008}b", "a\u{007f}b"] {
+        h.app.handle_event(Event::Paste(text.into()));
+        assert_eq!(h.app.task_edit(), Some("safe"));
+        assert!(h.app.message().contains("control characters"));
+        assert!(draft(&h.app).is_none());
+        assert!(h.log.borrow().is_empty());
+    }
+    h.app.handle_key(KeyCode::Enter);
+    assert_eq!(draft(&h.app).unwrap().as_str(), "safe");
+}
+
+#[test]
+fn backspace_removes_one_whole_grapheme() {
+    for grapheme in ["e\u{301}", "👩‍👩‍👧‍👦", "🇯🇵"] {
+        let mut h = harness(ready(), 0);
+        press(&mut h.app, 't');
+        h.app.handle_event(Event::Paste(format!("task{grapheme}")));
+        h.app.handle_key(KeyCode::Backspace);
+        assert_eq!(h.app.task_edit(), Some("task"));
+    }
 }
 
 #[test]

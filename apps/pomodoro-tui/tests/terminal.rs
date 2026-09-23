@@ -224,6 +224,9 @@ fn bracketed_multiline_paste_stays_in_task_editor_and_plain_key_stream_can_confi
     paste(&mut tui, "first\nq n");
     tui.expect("paste was rejected");
     assert_eq!(fs::read(location.state_path()).unwrap(), initial);
+    paste(&mut tui, "a\tb");
+    tui.expect("control characters");
+    assert_eq!(fs::read(location.state_path()).unwrap(), initial);
     tui.send(b"a");
     tui.send(b"\r");
     tui.expect("Task saved");

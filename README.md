@@ -64,7 +64,7 @@ cargo run -p pomodoro-tui
 
 For a restored distraction, `Space` records Return. At a restored Quick Start decision, `f` finishes and `c` starts a linked Focus session. Breaks and following sessions always wait for manual start.
 
-In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a multiline paste is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
+In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 
 ### Storage, recovery, and save failures
 
