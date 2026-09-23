@@ -3,7 +3,10 @@ use std::{
     rc::Rc,
 };
 
-use pomodoro_core::{CurrentTask, EventKind, Observation, SessionId, TimerConfig, Timestamp};
+use pomodoro_core::{
+    CurrentTask, EventKind, InterruptionKind, Observation, SessionId, TimerConfig, TimerState,
+    Timestamp,
+};
 use pomodoro_platform::{NotificationError, SaveError, TimeError};
 use ratatui::{Terminal, backend::TestBackend};
 
@@ -194,14 +197,30 @@ fn assert_running(app: &TestApp) {
 #[test]
 fn existing_keys_use_commands_and_reset_starts_a_distinct_session() {
     let mut h = harness(ready(), 0);
+    let ready_display = render(&h.app, 100, 30);
+    for hint in [
+        "Space: 開始",
+        "r: リセット",
+        "n: スキップ",
+        "s: 設定",
+        "?: ヘルプ",
+        "q: 保存して終了",
+    ] {
+        assert!(ready_display.contains(hint), "{hint}: {ready_display}");
+    }
     press(&mut h.app, '?');
     assert!(h.app.show_help());
     press(&mut h.app, '?');
     press(&mut h.app, ' ');
     let first = active_id(&h.app);
+    let running_display = render(&h.app, 100, 30);
+    assert!(running_display.contains("Space: 一時停止"));
+    assert!(!running_display.contains("s: 設定"));
     h.at.set(100);
     press(&mut h.app, ' ');
-    assert!(render(&h.app, 100, 30).contains("一時停止中"));
+    let paused_display = render(&h.app, 100, 30);
+    assert!(paused_display.contains("一時停止中"));
+    assert!(paused_display.contains("Space: 再開"));
     h.at.set(200);
     press(&mut h.app, ' ');
     assert_running(&h.app);
@@ -340,6 +359,9 @@ fn failed_completion_blocks_input_and_ticks_until_single_saved_notification() {
     let display = render(&h.app, 100, 30);
     assert!(display.contains("保存待ち"));
     assert!(display.contains("未確定の保存候補"));
+    assert!(display.contains("r: 保存を再試行"));
+    assert!(!display.contains("Space: 一時停止"));
+    assert!(!display.contains("q: 保存して終了"));
     h.notification_failure.set(true);
     press(&mut h.app, 'r');
     assert_eq!(*h.log.borrow(), ["failed", "saved", "notify"]);
@@ -411,7 +433,11 @@ fn shutdown_failure_requires_retry_or_confirmed_unsaved_exit() {
         press(&mut h.app, 'q');
         assert!(!h.app.should_quit());
         press(&mut h.app, 'Q');
-        assert!(render(&h.app, 100, 30).contains("未保存のまま終了"));
+        let display = render(&h.app, 100, 30);
+        assert!(display.contains("未保存のまま終了"));
+        assert!(display.contains("y: 未保存で終了"));
+        assert!(!display.contains("r: 保存を再試行"));
+        assert!(!display.contains("q: 保存して終了"));
         h.app.handle_key(KeyCode::Esc);
         assert!(!h.app.confirming_unsaved_exit());
         assert!(!h.app.should_quit());
@@ -517,6 +543,13 @@ fn all_restored_interruption_kinds_render_and_offer_the_correct_resume_command()
                 InterruptionKind::ObservationGap => "観測空白",
             };
             assert!(display.contains(label), "{display}");
+            let space_hint = if interruption_kind == InterruptionKind::Distraction {
+                "Space: 作業に戻る（Return）"
+            } else {
+                "Space: 再開"
+            };
+            assert!(display.contains(space_hint), "{display}");
+            assert!(!display.contains("s: 設定"));
             assert!(display.contains("累計:"));
             assert!(!display.contains("今日:"));
             if kind.is_work() {
@@ -600,7 +633,10 @@ fn restored_ready_kinds_draw_and_start_without_creating_history_on_render() {
             .unwrap();
         domain.apply(Command::RestoreApp, Timestamp(100)).unwrap();
         let mut h = harness(domain, 100);
-        assert!(render(&h.app, 100, 30).contains("待機中"));
+        let display = render(&h.app, 100, 30);
+        assert!(display.contains("待機中"));
+        assert!(display.contains("Space: 開始"));
+        assert!(display.contains("s: 設定"));
         assert!(h.log.borrow().is_empty());
         press(&mut h.app, ' ');
         let ProgressState::Active { session, .. } = &h.app.state().snapshot().state else {
@@ -621,7 +657,12 @@ fn restored_quick_start_choice_requires_explicit_finish_or_continue_and_can_quit
         let display = render(&h.app, 100, 30);
         assert!(display.contains("終了/継続の選択待ち"));
         assert!(display.contains("原稿を書く"));
+        assert!(display.contains("f: Quick Startを終了"));
         assert!(display.contains("c: Focusへ継続"));
+        assert!(display.contains("q: 保存して終了"));
+        for unavailable in ["Space:", "r: リセット", "n: スキップ", "s: 設定"] {
+            assert!(!display.contains(unavailable), "{unavailable}: {display}");
+        }
         press(&mut h.app, 's');
         assert!(h.app.settings().is_none());
         for ignored in [' ', 'r', 'n'] {
