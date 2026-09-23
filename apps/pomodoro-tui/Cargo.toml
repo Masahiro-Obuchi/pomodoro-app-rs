@@ -6,12 +6,14 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+chrono.workspace = true
 crossterm.workspace = true
 pomodoro-core = { path = "../../crates/pomodoro-core" }
 pomodoro-platform = { path = "../../crates/pomodoro-platform" }
 ratatui.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+rustix = { workspace = true, features = ["pty", "termios", "process"] }
 tempfile = "3.26.0"
 
 [lints]

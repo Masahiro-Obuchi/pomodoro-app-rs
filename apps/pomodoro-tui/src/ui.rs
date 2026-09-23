@@ -14,8 +14,33 @@ use ratatui::{
 use crate::{
     app::App,
     controller::{Clock, CompletionNotifier, SaveStore},
+    startup_gate::StartupGate,
     ui_settings::{centered, draw_settings},
 };
+
+/// Returns whether the recovery timestamp, loss warning and consent keys fit.
+/// A terminal too small to show these facts must not allow recovery consent.
+pub fn draw_startup(frame: &mut Frame<'_>, gate: &StartupGate) -> bool {
+    let recovery_prompt_visible = !matches!(gate, StartupGate::Recovery(_))
+        || (frame.area().width >= 50 && frame.area().height >= 9);
+    if !recovery_prompt_visible {
+        frame.render_widget(
+            Paragraph::new("画面を広げてください\nEsc: 終了")
+                .wrap(Wrap { trim: false })
+                .block(Block::default().borders(Borders::ALL).title(" 起動と復旧 ")),
+            centered(frame.area(), 82, 9),
+        );
+        return false;
+    }
+    let lines = gate.prompt_lines().join("\n");
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL).title(" 起動と復旧 ")),
+        centered(frame.area(), 82, 14),
+    );
+    recovery_prompt_visible
+}
 
 pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     frame: &mut Frame<'_>,
