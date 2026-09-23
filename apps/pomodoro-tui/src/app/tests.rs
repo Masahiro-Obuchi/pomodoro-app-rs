@@ -360,6 +360,7 @@ fn failed_completion_blocks_input_and_ticks_until_single_saved_notification() {
     assert!(display.contains("Save pending"));
     assert!(display.contains("Unconfirmed save"));
     assert!(display.contains("r: Retry save"));
+    assert!(display.contains("Q: Confirm unsaved exit"));
     assert!(!display.contains("Space: Pause"));
     assert!(!display.contains("q: Save & quit"));
     h.notification_failure.set(true);

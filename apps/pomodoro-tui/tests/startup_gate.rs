@@ -126,10 +126,12 @@ fn startup_save_failure_requires_retry_or_confirmed_unsaved_exit() {
     fs::create_dir(location.state_path()).unwrap();
     let gate = gate.advance();
     assert!(matches!(gate, StartupGate::SaveFailed { .. }));
+    assert!(render(&gate, 80, 24).0.contains("Q: Confirm unsaved exit"));
     let gate = gate
         .handle_key(KeyCode::Char('q'), true, unavailable_time)
         .unwrap();
     assert!(matches!(gate, StartupGate::ConfirmUnsaved { .. }));
+    assert!(render(&gate, 80, 24).0.contains("y: Exit unsaved"));
     let gate = gate
         .handle_key(KeyCode::Esc, true, unavailable_time)
         .unwrap();

@@ -104,7 +104,7 @@ impl StartupGate {
             }
             Self::SaveFailed { error, .. } => vec![
                 "Startup save unconfirmed. Timer and actions are paused.".into(),
-                "r: Retry save   Q: Exit unsaved".into(),
+                "r: Retry save   Q: Confirm unsaved exit".into(),
                 format!("Save error: {error}"),
             ],
             Self::ConfirmUnsaved { error, .. } => vec![

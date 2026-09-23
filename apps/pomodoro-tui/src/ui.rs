@@ -138,7 +138,7 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
                 )));
             }
             footer.push(Line::from("Timer and actions are paused."));
-            footer.push(Line::from("r: Retry save   Q: Exit unsaved"));
+            footer.push(Line::from("r: Retry save   Q: Confirm unsaved exit"));
         }
         InputContext::Normal => {
             let [session, common] = app.normal_hint_lines();

@@ -162,7 +162,7 @@ fn reflection_shows_distractions_and_returns_including_the_active_session() {
     let pending = render(&h.app, 80, 24);
     assert!(pending.contains("Returns 1"));
     assert!(pending.contains("r: Retry save"));
-    assert!(pending.contains("Q: Exit unsaved"));
+    assert!(pending.contains("Q: Confirm unsaved exit"));
     assert_eq!(h.app.history_reflection.borrow().rebuilds, 1);
     h.at.set(1_700);
     press(&mut h.app, 'r');
