@@ -66,9 +66,13 @@ struct TestClock {
     at: Rc<Cell<u64>>,
     previous: u64,
     broken: bool,
+    fail_next: Rc<Cell<bool>>,
 }
 impl Clock for TestClock {
     fn observe(&mut self) -> Result<Observation, TimeError> {
+        if self.fail_next.replace(false) {
+            return Err(TimeError::BeforeUnixEpoch);
+        }
         let at = self.at.get();
         let result = Observation {
             previous_at: Timestamp(self.previous),
@@ -103,6 +107,7 @@ type TestApp = App<Store, TestClock, Notifier>;
 struct Harness {
     app: TestApp,
     at: Rc<Cell<u64>>,
+    clock_failure: Rc<Cell<bool>>,
     failures: Rc<Cell<u32>>,
     fail_after: Rc<Cell<Option<u32>>>,
     notification_failure: Rc<Cell<bool>>,
@@ -115,6 +120,7 @@ fn ready() -> DomainState {
 
 fn harness(domain: DomainState, at: u64) -> Harness {
     let at = Rc::new(Cell::new(at));
+    let clock_failure = Rc::new(Cell::new(false));
     let failures = Rc::new(Cell::new(0));
     let fail_after = Rc::new(Cell::new(None));
     let notification_failure = Rc::new(Cell::new(false));
@@ -131,6 +137,7 @@ fn harness(domain: DomainState, at: u64) -> Harness {
             at: at.clone(),
             previous: at.get(),
             broken: false,
+            fail_next: clock_failure.clone(),
         },
         Notifier {
             log: log.clone(),
@@ -141,6 +148,7 @@ fn harness(domain: DomainState, at: u64) -> Harness {
     Harness {
         app: App::new(controller),
         at,
+        clock_failure,
         failures,
         fail_after,
         notification_failure,
@@ -244,6 +252,28 @@ fn settings_edit_cancel_and_save_only_from_ready() {
 }
 
 #[test]
+fn settings_input_consumes_normal_keys_until_cancelled() {
+    let mut h = harness(ready(), 0);
+    press(&mut h.app, 's');
+    let before = h.app.state().clone();
+    for key in ['q', 'Q', 'r', 'n', ' ', '?'] {
+        press(&mut h.app, key);
+    }
+    assert!(h.app.settings().is_some());
+    assert_eq!(h.app.state(), &before);
+    assert!(!h.app.show_help());
+    assert!(!h.app.should_quit());
+    assert!(h.log.borrow().is_empty());
+
+    h.app.handle_key(KeyCode::Esc);
+    assert!(h.app.settings().is_none());
+    press(&mut h.app, '?');
+    assert!(h.app.show_help());
+    press(&mut h.app, 'q');
+    assert!(h.app.should_quit());
+}
+
+#[test]
 fn settings_failure_displays_old_settings_until_retry_succeeds() {
     let mut h = harness(ready(), 0);
     press(&mut h.app, 's');
@@ -290,9 +320,19 @@ fn failed_completion_blocks_input_and_ticks_until_single_saved_notification() {
     assert_eq!(*h.log.borrow(), ["failed"]);
     assert!(!h.app.message().contains("完了しました"));
     let pending = h.app.pending_state().unwrap().clone();
-    for key in [' ', 'n', 's', 'q', 'c', 'f'] {
+    for key in [' ', 'n', 's', 'q', 'c', 'f', '?'] {
         press(&mut h.app, key);
     }
+    assert!(!h.app.show_help());
+    press(&mut h.app, 'Q');
+    assert!(h.app.confirming_unsaved_exit());
+    for key in ['r', 'q', '?', ' '] {
+        press(&mut h.app, key);
+    }
+    assert!(h.app.confirming_unsaved_exit());
+    assert_eq!(*h.log.borrow(), ["failed"]);
+    press(&mut h.app, 'n');
+    assert!(!h.app.confirming_unsaved_exit());
     h.at.set(1_100);
     h.app.tick();
     assert_eq!(h.app.pending_state(), Some(&pending));
@@ -307,6 +347,33 @@ fn failed_completion_blocks_input_and_ticks_until_single_saved_notification() {
     assert!(h.app.message().contains("通知失敗"));
     h.app.tick();
     assert_eq!(*h.log.borrow(), ["failed", "saved", "notify"]);
+}
+
+#[test]
+fn shutdown_clock_failure_accepts_only_retry_or_unsaved_exit() {
+    let mut h = harness(ready(), 0);
+    h.clock_failure.set(true);
+    press(&mut h.app, 'q');
+    assert!(h.app.shutdown_failed());
+    assert!(h.app.pending_state().is_none());
+
+    for key in ['q', 'n', 's', ' ', '?'] {
+        press(&mut h.app, key);
+    }
+    assert!(h.app.shutdown_failed());
+    assert!(!h.app.show_help());
+    assert!(!h.app.should_quit());
+    assert!(h.log.borrow().is_empty());
+
+    press(&mut h.app, 'Q');
+    assert!(h.app.confirming_unsaved_exit());
+    press(&mut h.app, 'r');
+    assert!(h.app.confirming_unsaved_exit());
+    h.app.handle_key(KeyCode::Esc);
+    assert!(!h.app.confirming_unsaved_exit());
+    press(&mut h.app, 'r');
+    assert!(h.app.should_quit());
+    assert_eq!(h.app.exit(), ExitOutcome::Saved);
 }
 
 #[test]
