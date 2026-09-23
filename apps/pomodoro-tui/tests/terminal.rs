@@ -11,8 +11,8 @@ use std::{
 };
 
 use pomodoro_core::{
-    Command as DomainCommand, DomainState, EventKind, GapReason, InterruptionKind, Observation,
-    ProgressState, SessionKind, TimerConfig, TimerState, Timestamp,
+    Command as DomainCommand, CurrentTask, DomainState, EventKind, GapReason, InterruptionKind,
+    Observation, ProgressState, SessionKind, SessionOutcome, TimerConfig, TimerState, Timestamp,
 };
 use pomodoro_platform::{LoadOutcome, StorageLocation, WritableStorage};
 use rustix::{
@@ -279,6 +279,151 @@ fn executable_can_start_focus_without_a_task() {
         panic!("expected active Focus")
     };
     assert!(session.current_task.is_none());
+}
+
+#[test]
+fn executable_starts_quick_start_with_the_saved_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("2: Quick Start (2 min)");
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    paste(&mut tui, "原稿を書く");
+    tui.expect("原稿を書く");
+    tui.send(b"\r");
+    tui.expect("Task saved");
+    let ready_bytes = fs::read(location.state_path()).unwrap();
+    tui.send(b"2");
+    tui.expect("Running");
+    assert_ne!(fs::read(location.state_path()).unwrap(), ready_bytes);
+    tui.send(b"q");
+    assert!(tui.finish().success());
+    let store = loaded(&location);
+    let ProgressState::Active { session, .. } =
+        &store.saved_state().unwrap().domain().snapshot().state
+    else {
+        panic!("expected Quick Start")
+    };
+    assert_eq!(session.kind, SessionKind::QuickStart);
+    assert_eq!(session.planned_duration_ms, 120_000);
+    assert_eq!(
+        session.current_task.as_ref().unwrap().as_str(),
+        "原稿を書く"
+    );
+    drop(store);
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("原稿を書く");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+}
+
+fn seed_awaiting_quick_start(location: &StorageLocation) {
+    let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
+        panic!("expected new store")
+    };
+    let mut domain = DomainState::new(TimerConfig::default()).unwrap();
+    domain
+        .apply(
+            DomainCommand::SetCurrentTask(CurrentTask::parse("原稿を書く").unwrap()),
+            Timestamp(1_000),
+        )
+        .unwrap();
+    domain
+        .apply(
+            DomainCommand::Start(SessionKind::QuickStart),
+            Timestamp(1_000),
+        )
+        .unwrap();
+    for at in (2_000..=121_000).step_by(1_000) {
+        domain
+            .observe(Observation {
+                previous_at: Timestamp(at - 1_000),
+                at: Timestamp(at),
+                monotonic_elapsed_ms: Some(1_000),
+            })
+            .unwrap();
+    }
+    assert!(matches!(
+        domain.snapshot().state,
+        ProgressState::AwaitingQuickStartDecision { .. }
+    ));
+    store.save(&domain, Timestamp(121_000)).unwrap();
+}
+
+#[test]
+fn executable_keeps_quick_start_choice_across_restarts_until_finish_or_continue() {
+    for choice in [b'f', b'c'] {
+        let dir = tempfile::tempdir().unwrap();
+        let location = location(dir.path());
+        seed_awaiting_quick_start(&location);
+        let mut tui = Tui::spawn(dir.path());
+        tui.expect("Choose finish or continue");
+        tui.send(b"q");
+        assert!(tui.finish().success());
+        let store = loaded(&location);
+        assert!(matches!(
+            store.saved_state().unwrap().domain().snapshot().state,
+            ProgressState::AwaitingQuickStartDecision { .. }
+        ));
+        drop(store);
+
+        let mut tui = Tui::spawn(dir.path());
+        tui.expect("Choose finish or continue");
+        tui.send(&[choice]);
+        tui.expect(if choice == b'f' {
+            "Space: Start"
+        } else {
+            "Space: Pause"
+        });
+        tui.send(b"q");
+        assert!(tui.finish().success());
+        let store = loaded(&location);
+        let domain = store.saved_state().unwrap().domain();
+        assert_eq!(domain.history().sessions.len(), 1);
+        assert_eq!(
+            domain.history().sessions[0].end.unwrap().outcome,
+            SessionOutcome::Completed
+        );
+        assert_eq!(
+            domain.snapshot().round_progress.completed_focuses_in_round,
+            0
+        );
+        assert_eq!(
+            domain
+                .history()
+                .events
+                .iter()
+                .filter(|event| matches!(event.payload, EventKind::QuickStartDecisionMade { .. }))
+                .count(),
+            1
+        );
+        if choice == b'f' {
+            let ProgressState::Ready {
+                next_kind,
+                current_task_draft,
+            } = &domain.snapshot().state
+            else {
+                panic!("expected Focus ready")
+            };
+            assert_eq!(*next_kind, SessionKind::Focus);
+            assert_eq!(current_task_draft.as_ref().unwrap().as_str(), "原稿を書く");
+        } else {
+            let ProgressState::Active { session, .. } = &domain.snapshot().state else {
+                panic!("expected linked Focus")
+            };
+            assert_eq!(session.kind, SessionKind::Focus);
+            assert_eq!(
+                session.continued_from_quick_start,
+                Some(domain.history().sessions[0].id)
+            );
+            assert_eq!(
+                session.current_task.as_ref().unwrap().as_str(),
+                "原稿を書く"
+            );
+            assert_eq!(session.planned_duration_ms, 25 * 60 * 1_000);
+        }
+    }
 }
 
 #[test]
