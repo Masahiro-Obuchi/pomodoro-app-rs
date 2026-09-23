@@ -34,7 +34,7 @@ The target format starts with fresh data and does not import existing settings, 
 
 The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, dependencies, completion criteria, and phase-level progress. Detailed behavior belongs in the specifications; implementation details and verification evidence belong in code, tests, and PRs. The original plan remains available in Git history.
 
-The [Phase 2 plan](docs/PHASE2_PLAN.md) splits persistence and the V1 TUI cutover into independently reviewable steps, with compatibility work, tests, and exit criteria. The [Phase 3 plan](docs/PHASE3_PLAN.md) outlines the remaining TUI input and workflow changes. Phase-level progress remains in the implementation plan.
+The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md) is archived as a record of the persistence and V1 TUI cutover. The active [Phase 3 plan](docs/PHASE3_PLAN.md) outlines the remaining TUI input and workflow changes. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
 
 ## Requirements
 
