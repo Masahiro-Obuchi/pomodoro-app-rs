@@ -148,6 +148,14 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
             let [session, common] = app.normal_hint_lines();
             footer.push(Line::from(session));
             footer.push(Line::from(common));
+            if matches!(
+                app.state().snapshot().state,
+                ProgressState::AwaitingQuickStartDecision { .. }
+            ) {
+                footer.push(Line::from(
+                    "Choice time is not counted. Continue starts a full Focus.",
+                ));
+            }
             if app.show_help() {
                 footer.push(Line::from(
                     "Settings are available while ready. Paused time is not counted.",

@@ -387,6 +387,7 @@ fn command_message(command: &Command) -> &'static str {
     match command {
         Command::SetCurrentTask(_) => "Task saved.",
         Command::Configure(_) => "Settings saved; round progress reset.",
+        Command::Start(SessionKind::QuickStart) => "Quick Start started and saved.",
         Command::Start(_) => "Session started and saved.",
         Command::Pause(_) => "Paused and saved.",
         Command::Resume(_) | Command::Return(_) => "Resumed and saved.",

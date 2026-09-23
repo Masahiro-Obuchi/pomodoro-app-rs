@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 use pomodoro_core::{
-    Command, InterruptionKind, PomodoroState, ProgressState, QuickStartChoice, SessionOutcome,
-    TimerState,
+    Command, InterruptionKind, PomodoroState, ProgressState, QuickStartChoice, SessionKind,
+    SessionOutcome, TimerState,
 };
 
 pub(super) enum NormalAction {
@@ -48,11 +48,16 @@ impl NormalControls {
                     Binding::command('r', "r: Reset", Command::ResetReady),
                     Binding::command('n', "n: Skip", Command::SkipReady),
                 ];
-                if *next_kind == pomodoro_core::SessionKind::Focus {
+                if *next_kind == SessionKind::Focus {
                     bindings.push(Binding::new(
                         't',
                         Some("t: Edit task"),
                         NormalAction::RequestTask,
+                    ));
+                    bindings.push(Binding::command(
+                        '2',
+                        "2: Quick Start (2 min)",
+                        Command::Start(SessionKind::QuickStart),
                     ));
                 }
                 bindings
