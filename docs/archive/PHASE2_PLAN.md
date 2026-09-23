@@ -2,9 +2,12 @@
 
 作成日：2026-09-17
 
+> [!NOTE]
+> Phase 2は完了済み。本書は当時の実行計画として保存する。現在の進捗は[Implementation Plan](../IMPLEMENTATION_PLAN.md)を参照する。
+
 本書は、Phase 2「永続化と復元の基盤」をレビュー可能な変更単位へ分けた実行計画である。対象、依存関係、互換対応、各単位の検証と完了条件を示す。実装済みであることを意味せず、関数・ファイル単位の完了台帳や検証結果は置かない。
 
-Phase単位の進捗は[Implementation Plan](IMPLEMENTATION_PLAN.md)だけで管理する。機能の正本は[Product Spec](PRODUCT_SPEC.md)、状態と遷移の正本は[Domain Model](DOMAIN_MODEL.md)、保存契約の正本は[Persistence Schema](PERSISTENCE_SCHEMA.md)とし、本書で別の仕様を定義しない。
+Phase単位の進捗は[Implementation Plan](../IMPLEMENTATION_PLAN.md)だけで管理する。機能の正本は[Product Spec](../PRODUCT_SPEC.md)、状態と遷移の正本は[Domain Model](../DOMAIN_MODEL.md)、保存契約の正本は[Persistence Schema](../PERSISTENCE_SCHEMA.md)とし、本書で別の仕様を定義しない。
 
 ## 1. 到達点とPhase境界
 

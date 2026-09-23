@@ -12,7 +12,7 @@
 | [Domain Model](DOMAIN_MODEL.md) | 状態、所有関係、遷移、invariant |
 | [Persistence Schema](PERSISTENCE_SCHEMA.md) | 保存形式、読込・保存・復旧、整合性と排他 |
 | 本書 | 実装順序、依存関係、到達目標、Phase単位の進捗 |
-| [Phase 2 Plan](PHASE2_PLAN.md) | Phase 2内のレビュー単位、対象、互換対応、検証と終了条件 |
+| [Phase 2 Plan（過去資料）](archive/PHASE2_PLAN.md) | 完了したPhase 2のレビュー単位、対象、互換対応、検証と終了条件 |
 | [Phase 3 Plan](PHASE3_PLAN.md) | Phase 3内のレビュー単位、既存経路、検証と終了条件 |
 | コード・テスト・PR | 具体的な実装、変更点、検証の証拠 |
 
@@ -28,7 +28,7 @@
 | --- | --- | --- | --- | --- |
 | 0 | 実装の設計基準を揃える | なし | 完了 | 保存成功境界・系列内保証・最小振り返り表示を採用 |
 | 1 | 新しいドメインをコアで扱える | Phase 0 | 完了 | 純粋な遷移・計時・履歴・invariantを検証済み。Phase 1で設けた一時的なlegacy境界はPhase 2で撤去済み |
-| 2 | V1データを安全に保存・復元できる | Phase 1 | 完了 | 通常起動のV1切替とlegacy撤去を完了。全workspace、実ファイル・別プロセス、保存境界での子プロセス停止、Rust 1.86を検証。[詳細計画](PHASE2_PLAN.md) |
+| 2 | V1データを安全に保存・復元できる | Phase 1 | 完了 | 通常起動のV1切替とlegacy撤去を完了。全workspace、実ファイル・別プロセス、保存境界での子プロセス停止、Rust 1.86を検証。[詳細計画（過去資料）](archive/PHASE2_PLAN.md) |
 | 3 | TUIで着手・集中・復帰の一連の操作ができる | Phase 2 | 進行中 | [詳細計画](PHASE3_PLAN.md)を定め、Current Task入力からTUIの操作経路を整える |
 | 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 未着手 | 最小限の履歴確認と一連の動作の受入検証 |
 
@@ -64,7 +64,7 @@ Phase内は、Session／種別／終了結果 → TimerState／Interruption → 
 
 このPhaseでschema_version、save_generation、ID採番の保存、atomic save、排他と失敗時の扱いを揃える。保存形式は最初から拡張MVPのモデルを対象とし、互換処理のための中間形式を作らない。候補の保存成功後に操作成功を伝えるアプリケーション境界も接続する。Phase 3までTUIをビルド不能のまま残さない。
 
-レビュー単位ごとの対象・依存関係・互換対応・テストは[Phase 2 Plan](PHASE2_PLAN.md)を参照する。Phase 2で既存操作、保存待ち・再試行・未保存終了、V1全状態の最小表示と復元後に必要な操作経路を接続する。Current Task入力、Quick Start開始、Distraction申告の新規UXはPhase 3で仕上げる。振り返りUIの完成はPhase 4とし、保存層だけの完成をPhase 2完了としない。
+レビュー単位ごとの対象・依存関係・互換対応・テストは[Phase 2 Plan（過去資料）](archive/PHASE2_PLAN.md)を参照する。Phase 2で既存操作、保存待ち・再試行・未保存終了、V1全状態の最小表示と復元後に必要な操作経路を接続する。Current Task入力、Quick Start開始、Distraction申告の新規UXはPhase 3で仕上げる。振り返りUIの完成はPhase 4とし、保存層だけの完成をPhase 2完了としない。
 
 ### Phase 3：TUIでの着手・集中・復帰
 
