@@ -42,25 +42,27 @@ impl NormalControls {
     pub(super) fn for_snapshot(snapshot: &PomodoroState) -> Self {
         let session = match &snapshot.state {
             ProgressState::Ready { next_kind, .. } => vec![
-                Binding::command(' ', "Space: 開始", Command::Start(*next_kind)),
-                Binding::command('r', "r: リセット", Command::ResetReady),
-                Binding::command('n', "n: スキップ", Command::SkipReady),
+                Binding::command(' ', "Space: Start", Command::Start(*next_kind)),
+                Binding::command('r', "r: Reset", Command::ResetReady),
+                Binding::command('n', "n: Skip", Command::SkipReady),
             ],
             ProgressState::Active { session, timer } => {
                 let (space_hint, space_command) = match timer {
-                    TimerState::Running { .. } => ("Space: 一時停止", Command::Pause(session.id)),
+                    TimerState::Running { .. } => ("Space: Pause", Command::Pause(session.id)),
                     TimerState::Interrupted { interruption }
                         if interruption.kind == InterruptionKind::Distraction =>
                     {
-                        ("Space: 作業に戻る（Return）", Command::Return(session.id))
+                        ("Space: Return", Command::Return(session.id))
                     }
-                    TimerState::Interrupted { .. } => ("Space: 再開", Command::Resume(session.id)),
+                    TimerState::Interrupted { .. } => {
+                        ("Space: Resume", Command::Resume(session.id))
+                    }
                 };
                 vec![
                     Binding::command(' ', space_hint, space_command),
                     Binding::command(
                         'r',
-                        "r: リセット",
+                        "r: Reset",
                         Command::End {
                             session_id: session.id,
                             outcome: SessionOutcome::Reset,
@@ -68,7 +70,7 @@ impl NormalControls {
                     ),
                     Binding::command(
                         'n',
-                        "n: スキップ",
+                        "n: Skip",
                         Command::End {
                             session_id: session.id,
                             outcome: SessionOutcome::Skipped,
@@ -82,7 +84,7 @@ impl NormalControls {
             } => vec![
                 Binding::command(
                     'f',
-                    "f: Quick Startを終了",
+                    "f: Finish Quick Start",
                     Command::DecideQuickStart {
                         session_id: *quick_start_session_id,
                         choice: QuickStartChoice::Finish,
@@ -90,7 +92,7 @@ impl NormalControls {
                 ),
                 Binding::command(
                     'c',
-                    "c: Focusへ継続",
+                    "c: Continue to Focus",
                     Command::DecideQuickStart {
                         session_id: *quick_start_session_id,
                         choice: QuickStartChoice::Continue,
@@ -99,13 +101,13 @@ impl NormalControls {
             ],
         };
         let settings_hint =
-            matches!(snapshot.state, ProgressState::Ready { .. }).then_some("s: 設定");
+            matches!(snapshot.state, ProgressState::Ready { .. }).then_some("s: Settings");
         let common = vec![
             // Keep the existing explanation for s outside Ready, but do not
             // advertise settings as an available operation there.
             Binding::new('s', settings_hint, NormalAction::RequestSettings),
-            Binding::new('?', Some("?: ヘルプ"), NormalAction::ToggleHelp),
-            Binding::new('q', Some("q: 保存して終了"), NormalAction::Shutdown),
+            Binding::new('?', Some("?: Help"), NormalAction::ToggleHelp),
+            Binding::new('q', Some("q: Save & quit"), NormalAction::Shutdown),
         ];
         Self { session, common }
     }

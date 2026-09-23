@@ -13,20 +13,20 @@ fn ready_reset_reports_no_change_and_active_reset_waits_for_saved_success() {
     press(&mut h.app, 'r');
     assert_eq!(h.app.state(), &initial);
     assert!(h.log.borrow().is_empty());
-    assert!(h.app.message().contains("状態は変更していません"));
-    assert!(!h.app.message().contains("戻しました"));
+    assert!(h.app.message().contains("nothing changed"));
+    assert!(!h.app.message().contains("Reset to ready"));
     press(&mut h.app, ' ');
     h.at.set(100);
     h.failures.set(1);
     press(&mut h.app, 'r');
     assert!(h.app.pending_state().is_some());
-    assert!(!h.app.message().contains("戻しました"));
+    assert!(!h.app.message().contains("Reset to ready"));
     press(&mut h.app, 'r');
-    assert!(h.app.message().contains("開始待ちに戻しました"));
+    assert!(h.app.message().contains("Reset to ready"));
     assert_eq!(h.app.state().history().sessions.len(), 1);
     assert_eq!(summary(&h.app).work_ms, 100);
     press(&mut h.app, 'r');
-    assert!(h.app.message().contains("状態は変更していません"));
+    assert!(h.app.message().contains("nothing changed"));
     assert_eq!(h.app.state().history().sessions.len(), 1);
 }
 
@@ -145,12 +145,12 @@ fn reflection_shows_distractions_and_returns_including_the_active_session() {
     );
     let display = render(&h.app, 80, 24);
     for label in [
-        "累計:",
-        "集中完了 0回",
-        "作業 0分",
-        "脱線 2回",
-        "復帰 1回",
-        "ラウンド:",
+        "Total:",
+        "Focus completed 0",
+        "Work 0 min",
+        "Distractions 2",
+        "Returns 1",
+        "Round",
         "Return",
     ] {
         assert!(display.contains(label), "missing {label}: {display}");
@@ -160,9 +160,9 @@ fn reflection_shows_distractions_and_returns_including_the_active_session() {
     press(&mut h.app, ' ');
     assert_eq!(summary(&h.app).returns, 1);
     let pending = render(&h.app, 80, 24);
-    assert!(pending.contains("復帰 1回"));
-    assert!(pending.contains("r: 保存を再試行"));
-    assert!(pending.contains("Q: 未保存終了の確認"));
+    assert!(pending.contains("Returns 1"));
+    assert!(pending.contains("r: Retry save"));
+    assert!(pending.contains("Q: Confirm unsaved exit"));
     assert_eq!(h.app.history_reflection.borrow().rebuilds, 1);
     h.at.set(1_700);
     press(&mut h.app, 'r');
@@ -176,5 +176,5 @@ fn reflection_shows_distractions_and_returns_including_the_active_session() {
         }
     );
     assert_eq!(h.app.history_reflection.borrow().rebuilds, 2);
-    assert!(render(&h.app, 80, 24).contains("復帰 2回"));
+    assert!(render(&h.app, 80, 24).contains("Returns 2"));
 }

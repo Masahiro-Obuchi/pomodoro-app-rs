@@ -19,11 +19,11 @@ fn main() -> ExitCode {
     match run() {
         Ok(ExitOutcome::Saved | ExitOutcome::Cancelled) => ExitCode::SUCCESS,
         Ok(ExitOutcome::Unsaved) => {
-            eprintln!("保存を確認できないまま終了しました。");
+            eprintln!("Exited without a confirmed save.");
             ExitCode::FAILURE
         }
         Err(error) => {
-            eprintln!("実行を継続できません: {error}");
+            eprintln!("Cannot continue: {error}");
             ExitCode::FAILURE
         }
     }

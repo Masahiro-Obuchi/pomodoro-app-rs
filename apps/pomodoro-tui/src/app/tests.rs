@@ -199,12 +199,12 @@ fn existing_keys_use_commands_and_reset_starts_a_distinct_session() {
     let mut h = harness(ready(), 0);
     let ready_display = render(&h.app, 100, 30);
     for hint in [
-        "Space: 開始",
-        "r: リセット",
-        "n: スキップ",
-        "s: 設定",
-        "?: ヘルプ",
-        "q: 保存して終了",
+        "Space: Start",
+        "r: Reset",
+        "n: Skip",
+        "s: Settings",
+        "?: Help",
+        "q: Save & quit",
     ] {
         assert!(ready_display.contains(hint), "{hint}: {ready_display}");
     }
@@ -214,13 +214,13 @@ fn existing_keys_use_commands_and_reset_starts_a_distinct_session() {
     press(&mut h.app, ' ');
     let first = active_id(&h.app);
     let running_display = render(&h.app, 100, 30);
-    assert!(running_display.contains("Space: 一時停止"));
-    assert!(!running_display.contains("s: 設定"));
+    assert!(running_display.contains("Space: Pause"));
+    assert!(!running_display.contains("s: Settings"));
     h.at.set(100);
     press(&mut h.app, ' ');
     let paused_display = render(&h.app, 100, 30);
-    assert!(paused_display.contains("一時停止中"));
-    assert!(paused_display.contains("Space: 再開"));
+    assert!(paused_display.contains("Paused"));
+    assert!(paused_display.contains("Space: Resume"));
     h.at.set(200);
     press(&mut h.app, ' ');
     assert_running(&h.app);
@@ -248,7 +248,7 @@ fn existing_keys_use_commands_and_reset_starts_a_distinct_session() {
 fn settings_edit_cancel_and_save_only_from_ready() {
     let mut h = harness(ready(), 0);
     press(&mut h.app, 's');
-    assert!(render(&h.app, 100, 30).contains("Enter: 保存"));
+    assert!(render(&h.app, 100, 30).contains("Enter: Save"));
     h.app.handle_key(KeyCode::Right);
     h.app.handle_key(KeyCode::Esc);
     assert_eq!(h.app.state().snapshot().settings.focus_seconds(), 1);
@@ -264,7 +264,7 @@ fn settings_edit_cancel_and_save_only_from_ready() {
     press(&mut h.app, ' ');
     press(&mut h.app, 's');
     assert!(h.app.settings().is_none());
-    assert!(h.app.message().contains("待機中"));
+    assert!(h.app.message().contains("while ready"));
     press(&mut h.app, ' ');
     press(&mut h.app, 's');
     assert!(h.app.settings().is_none());
@@ -301,10 +301,10 @@ fn settings_failure_displays_old_settings_until_retry_succeeds() {
     h.app.handle_key(KeyCode::Enter);
     assert!(h.app.settings().is_none());
     assert_eq!(h.app.state().snapshot().settings.focus_seconds(), 1);
-    assert!(!h.app.message().contains("設定を保存"));
+    assert!(!h.app.message().contains("Settings saved"));
     press(&mut h.app, 'r');
     assert_eq!(h.app.state().snapshot().settings.focus_seconds(), 61);
-    assert!(h.app.message().contains("設定を保存"));
+    assert!(h.app.message().contains("Settings saved"));
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn completion_boundary_discards_input_and_notifies_after_save() {
         ));
         assert_eq!(*h.log.borrow(), ["saved", "notify"]);
         assert_eq!(h.app.state().history().sessions.len(), 1);
-        assert!(h.app.message().contains("完了"));
+        assert!(h.app.message().contains("complete"));
     }
 }
 
@@ -337,7 +337,7 @@ fn failed_completion_blocks_input_and_ticks_until_single_saved_notification() {
     h.failures.set(1);
     h.app.tick();
     assert_eq!(*h.log.borrow(), ["failed"]);
-    assert!(!h.app.message().contains("完了しました"));
+    assert!(!h.app.message().contains("complete"));
     let pending = h.app.pending_state().unwrap().clone();
     for key in [' ', 'n', 's', 'q', 'c', 'f', '?'] {
         press(&mut h.app, key);
@@ -357,16 +357,17 @@ fn failed_completion_blocks_input_and_ticks_until_single_saved_notification() {
     assert_eq!(h.app.pending_state(), Some(&pending));
     assert!(!h.app.should_quit());
     let display = render(&h.app, 100, 30);
-    assert!(display.contains("保存待ち"));
-    assert!(display.contains("未確定の保存候補"));
-    assert!(display.contains("r: 保存を再試行"));
-    assert!(!display.contains("Space: 一時停止"));
-    assert!(!display.contains("q: 保存して終了"));
+    assert!(display.contains("Save pending"));
+    assert!(display.contains("Unconfirmed save"));
+    assert!(display.contains("r: Retry save"));
+    assert!(display.contains("Q: Confirm unsaved exit"));
+    assert!(!display.contains("Space: Pause"));
+    assert!(!display.contains("q: Save & quit"));
     h.notification_failure.set(true);
     press(&mut h.app, 'r');
     assert_eq!(*h.log.borrow(), ["failed", "saved", "notify"]);
     assert!(h.app.pending_state().is_none());
-    assert!(h.app.message().contains("通知失敗"));
+    assert!(h.app.message().contains("Notification failed"));
     h.app.tick();
     assert_eq!(*h.log.borrow(), ["failed", "saved", "notify"]);
 }
@@ -411,7 +412,7 @@ fn retry_keeps_operations_blocked_through_the_second_gap_save() {
     press(&mut h.app, ' ');
     press(&mut h.app, 'r');
     assert!(h.app.pending_state().is_none());
-    assert!(render(&h.app, 100, 30).contains("観測空白・再開待ち"));
+    assert!(render(&h.app, 100, 30).contains("Timing gap · Awaiting Resume"));
     assert_eq!(
         h.app
             .state()
@@ -434,10 +435,10 @@ fn shutdown_failure_requires_retry_or_confirmed_unsaved_exit() {
         assert!(!h.app.should_quit());
         press(&mut h.app, 'Q');
         let display = render(&h.app, 100, 30);
-        assert!(display.contains("未保存のまま終了"));
-        assert!(display.contains("y: 未保存で終了"));
-        assert!(!display.contains("r: 保存を再試行"));
-        assert!(!display.contains("q: 保存して終了"));
+        assert!(display.contains("Exit without saving"));
+        assert!(display.contains("y: Exit unsaved"));
+        assert!(!display.contains("r: Retry save"));
+        assert!(!display.contains("q: Save & quit"));
         h.app.handle_key(KeyCode::Esc);
         assert!(!h.app.confirming_unsaved_exit());
         assert!(!h.app.should_quit());
@@ -537,21 +538,21 @@ fn all_restored_interruption_kinds_render_and_offer_the_correct_resume_command()
             let before = h.app.state().clone();
             let display = render(&h.app, 100, 30);
             let label = match interruption_kind {
-                InterruptionKind::Pause => "一時停止中",
-                InterruptionKind::Distraction => "Return待ち",
-                InterruptionKind::AppExit => "終了から復元",
-                InterruptionKind::ObservationGap => "観測空白",
+                InterruptionKind::Pause => "Paused",
+                InterruptionKind::Distraction => "Awaiting Return",
+                InterruptionKind::AppExit => "Stopped on exit",
+                InterruptionKind::ObservationGap => "Timing gap",
             };
             assert!(display.contains(label), "{display}");
             let space_hint = if interruption_kind == InterruptionKind::Distraction {
-                "Space: 作業に戻る（Return）"
+                "Space: Return"
             } else {
-                "Space: 再開"
+                "Space: Resume"
             };
             assert!(display.contains(space_hint), "{display}");
-            assert!(!display.contains("s: 設定"));
-            assert!(display.contains("累計:"));
-            assert!(!display.contains("今日:"));
+            assert!(!display.contains("s: Settings"));
+            assert!(display.contains("Total:"));
+            assert!(!display.contains("Today:"));
             if kind.is_work() {
                 assert!(display.contains("原稿を書く"));
             }
@@ -601,7 +602,7 @@ fn restored_running_sessions_wait_for_explicit_resume_and_do_not_credit_downtime
             .apply(Command::RestoreApp, Timestamp(10_000))
             .unwrap();
         let mut h = harness(domain, 10_000);
-        assert!(render(&h.app, 100, 30).contains("観測空白・再開待ち"));
+        assert!(render(&h.app, 100, 30).contains("Timing gap · Awaiting Resume"));
         h.at.set(20_000);
         h.app.tick();
         let ProgressState::Active { session, .. } = &h.app.state().snapshot().state else {
@@ -634,9 +635,9 @@ fn restored_ready_kinds_draw_and_start_without_creating_history_on_render() {
         domain.apply(Command::RestoreApp, Timestamp(100)).unwrap();
         let mut h = harness(domain, 100);
         let display = render(&h.app, 100, 30);
-        assert!(display.contains("待機中"));
-        assert!(display.contains("Space: 開始"));
-        assert!(display.contains("s: 設定"));
+        assert!(display.contains("Ready"));
+        assert!(display.contains("Space: Start"));
+        assert!(display.contains("s: Settings"));
         assert!(h.log.borrow().is_empty());
         press(&mut h.app, ' ');
         let ProgressState::Active { session, .. } = &h.app.state().snapshot().state else {
@@ -655,12 +656,12 @@ fn restored_quick_start_choice_requires_explicit_finish_or_continue_and_can_quit
             .unwrap();
         let mut h = harness(domain, 130_000);
         let display = render(&h.app, 100, 30);
-        assert!(display.contains("終了/継続の選択待ち"));
+        assert!(display.contains("Choose finish or continue"));
         assert!(display.contains("原稿を書く"));
-        assert!(display.contains("f: Quick Startを終了"));
-        assert!(display.contains("c: Focusへ継続"));
-        assert!(display.contains("q: 保存して終了"));
-        for unavailable in ["Space:", "r: リセット", "n: スキップ", "s: 設定"] {
+        assert!(display.contains("f: Finish Quick Start"));
+        assert!(display.contains("c: Continue to Focus"));
+        assert!(display.contains("q: Save & quit"));
+        for unavailable in ["Space:", "r: Reset", "n: Skip", "s: Settings"] {
             assert!(!display.contains(unavailable), "{unavailable}: {display}");
         }
         press(&mut h.app, 's');
@@ -773,7 +774,7 @@ fn quick_start_continue_retry_does_not_create_another_focus_or_repeat_decision()
         h.app.state().snapshot().state,
         ProgressState::AwaitingQuickStartDecision { .. }
     ));
-    assert!(!h.app.message().contains("選択を保存"));
+    assert!(!h.app.message().contains("choice saved"));
     let candidate = h.app.pending_state().unwrap().clone();
     press(&mut h.app, 'f');
     press(&mut h.app, 'c');

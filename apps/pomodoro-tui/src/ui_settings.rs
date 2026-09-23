@@ -36,8 +36,8 @@ pub(crate) fn draw_settings(frame: &mut Frame<'_>, settings: &SettingsDraft) {
     }
 
     lines.push(Line::from(""));
-    lines.push(Line::from("↑/↓: 選択   ←/→: 変更   Enter: 保存"));
-    lines.push(Line::from("Esc または s: キャンセル"));
+    lines.push(Line::from("↑/↓: Select   ←/→: Adjust   Enter: Save"));
+    lines.push(Line::from("Esc or s: Cancel"));
 
     frame.render_widget(Clear, area);
     frame.render_widget(
@@ -47,7 +47,7 @@ pub(crate) fn draw_settings(frame: &mut Frame<'_>, settings: &SettingsDraft) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" 設定 ")
+                    .title(" Settings ")
                     .style(Style::default().bg(Color::Black)),
             ),
         area,
@@ -56,23 +56,26 @@ pub(crate) fn draw_settings(frame: &mut Frame<'_>, settings: &SettingsDraft) {
 
 fn setting_text(settings: &SettingsDraft, field: SettingsField) -> (&'static str, String) {
     match field {
-        SettingsField::FocusDuration => ("集中時間", format_duration(settings.focus_seconds())),
-        SettingsField::ShortBreakDuration => {
-            ("短い休憩", format_duration(settings.short_break_seconds()))
+        SettingsField::FocusDuration => {
+            ("Focus duration", format_duration(settings.focus_seconds()))
         }
+        SettingsField::ShortBreakDuration => (
+            "Short break",
+            format_duration(settings.short_break_seconds()),
+        ),
         SettingsField::LongBreakDuration => {
-            ("長い休憩", format_duration(settings.long_break_seconds()))
+            ("Long break", format_duration(settings.long_break_seconds()))
         }
         SettingsField::FocusesBeforeLongBreak => (
-            "長い休憩までの回数",
-            format!("{} 回", settings.focuses_before_long_break()),
+            "Focuses before long break",
+            format!("{} sessions", settings.focuses_before_long_break()),
         ),
     }
 }
 
 fn format_duration(seconds: u64) -> String {
     if seconds % 60 == 0 {
-        format!("{} 分", seconds / 60)
+        format!("{} min", seconds / 60)
     } else {
         format!("{}:{:02}", seconds / 60, seconds % 60)
     }

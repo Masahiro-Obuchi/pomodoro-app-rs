@@ -5,7 +5,7 @@ A Rust application for helping people start work, stay oriented, return after di
 The project currently provides a terminal user interface built with Ratatui. The timer state machine lives in the UI-independent `pomodoro-core` crate. The TUI remains the initial frontend for validating the expanded product and domain model.
 
 > [!NOTE]
-> The current TUI text and desktop notifications are in Japanese. Internationalization can be added without changing the core timer logic.
+> The current TUI text and desktop notifications are in English. Task names may contain Japanese or other Unicode text. Language switching is not currently implemented.
 
 ## Current features
 

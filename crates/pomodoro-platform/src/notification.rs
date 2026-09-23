@@ -14,19 +14,8 @@ impl NotifySendNotifier {
     /// Returns [`NotificationError`] if `notify-send` cannot be launched or exits
     /// unsuccessfully.
     pub fn session_completed(self, completed: SessionKind) -> Result<(), NotificationError> {
-        let (summary, body) = match completed {
-            SessionKind::Focus => ("集中タイム完了", "休憩しましょう。"),
-            SessionKind::QuickStart => (
-                "Quick Start完了",
-                "終了するか、集中タイムへ継続するか選んでください。",
-            ),
-            SessionKind::ShortBreak | SessionKind::LongBreak => {
-                ("休憩完了", "次の集中タイムを始められます。")
-            }
-        };
-
         let status = Command::new("notify-send")
-            .args(["--app-name", "Pomodoro", summary, body])
+            .args(notification_args(completed))
             .status()
             .map_err(NotificationError::Launch)?;
         if status.success() {
@@ -35,6 +24,17 @@ impl NotifySendNotifier {
             Err(NotificationError::UnsuccessfulExit(status.code()))
         }
     }
+}
+
+fn notification_args(completed: SessionKind) -> [&'static str; 4] {
+    let (summary, body) = match completed {
+        SessionKind::Focus => ("Focus complete", "Take a break."),
+        SessionKind::QuickStart => ("Quick Start complete", "Finish or continue to Focus."),
+        SessionKind::ShortBreak | SessionKind::LongBreak => {
+            ("Break complete", "Ready for the next Focus.")
+        }
+    };
+    ["--app-name", "Pomodoro", summary, body]
 }
 
 #[derive(Debug)]
@@ -59,6 +59,39 @@ impl Error for NotificationError {
         match self {
             Self::Launch(error) => Some(error),
             Self::UnsuccessfulExit(_) => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn english_notification_arguments_cover_every_session_kind() {
+        for (kind, summary, body) in [
+            (SessionKind::Focus, "Focus complete", "Take a break."),
+            (
+                SessionKind::QuickStart,
+                "Quick Start complete",
+                "Finish or continue to Focus.",
+            ),
+            (
+                SessionKind::ShortBreak,
+                "Break complete",
+                "Ready for the next Focus.",
+            ),
+            (
+                SessionKind::LongBreak,
+                "Break complete",
+                "Ready for the next Focus.",
+            ),
+        ] {
+            assert_eq!(
+                notification_args(kind),
+                ["--app-name", "Pomodoro", summary, body],
+                "{kind:?}"
+            );
         }
     }
 }
