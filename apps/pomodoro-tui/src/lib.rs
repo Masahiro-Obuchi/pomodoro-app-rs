@@ -10,4 +10,7 @@ mod settings;
 pub mod startup_gate;
 #[cfg(target_os = "linux")]
 pub mod ui;
+#[cfg(target_os = "linux")]
 mod ui_settings;
+#[cfg(target_os = "linux")]
+mod ui_task;

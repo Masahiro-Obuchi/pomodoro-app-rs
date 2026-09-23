@@ -13,6 +13,7 @@ use ratatui::{Terminal, backend::TestBackend};
 use super::*;
 
 mod reflection;
+mod task;
 
 type Log = Rc<RefCell<Vec<&'static str>>>;
 
