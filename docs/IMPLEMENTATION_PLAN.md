@@ -71,7 +71,7 @@ Phase内は、Session／種別／終了結果 → TimerState／Interruption → 
 - **目的**：採用したユーザーフローを、既存TUIから日常的に操作できるようにする。
 - **変更対象**：pomodoro-tuiの新機能の入力・表示・ヘルプと、Phase 2で接続した設定・通知・ライフサイクルを含むユーザーフローの整備。
 - **依存関係**：Phase 2までのコアと永続化基盤。
-- **完了条件**：Current Task、Quick Startの終了／継続、Pause／Resume、Distraction／Return、手動Breakを操作できる。終了・再起動後も仕様どおりの状態で再開を待ち、保存失敗と未対応ファイルへの対処が利用者に伝わる。
+- **完了条件**：Current Taskの入力、Quick Startの開始・終了／継続、Pause／Resume、Distraction／Return、中止・Reset／Skip、手動Breakを操作できる。終了・再起動後も仕様どおりの状態で再開を待ち、保存失敗と未対応ファイルへの対処が利用者に伝わる。
 - **後続への接続**：Phase 4で履歴と照合できる、実際の操作経路を提供する。
 
 Phase 2の既存操作・保存接続を基盤に、新しい作業開始・脱線申告・復帰の入力と表示を整える。計時・完了・中断の判断はコアに置き、TUI側で重複実装しない。
