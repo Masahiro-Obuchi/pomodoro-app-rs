@@ -90,29 +90,29 @@ impl StartupGate {
                     .ok()
                     .and_then(DateTime::<Utc>::from_timestamp_millis)
                     .map_or_else(
-                        || format!("Unix時刻 {saved_at} ms"),
+                        || format!("Unix time {saved_at} ms"),
                         |at| at.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string(),
                     );
                 vec![
-                    "保存本体を読み込めません。バックアップから復旧できます。".into(),
-                    format!("復旧元の保存日時: {date}"),
-                    "この日時以降の記録が失われる可能性があります。".into(),
-                    "y: 復旧して続行   n / q / Esc: 変更せず終了".into(),
-                    format!("復旧元: {}", candidate.location().backup_path().display()),
-                    format!("原因: {}", candidate.primary_problem()),
+                    "Primary save unreadable; backup available.".into(),
+                    format!("Backup saved: {date}"),
+                    "Changes after this time may be lost.".into(),
+                    "y: Recover   n/q/Esc: Exit unchanged".into(),
+                    format!("Backup: {}", candidate.location().backup_path().display()),
+                    format!("Cause: {}", candidate.primary_problem()),
                 ]
             }
             Self::SaveFailed { error, .. } => vec![
-                "起動時の保存を確認できません。通常操作と計時を保留しています。".into(),
-                "r: 同じ保存候補を再試行   Q: 未保存終了の確認".into(),
-                format!("保存エラー: {error}"),
+                "Startup save unconfirmed. Timer and actions are paused.".into(),
+                "r: Retry save   Q: Exit unsaved".into(),
+                format!("Save error: {error}"),
             ],
             Self::ConfirmUnsaved { error, .. } => vec![
-                "起動時の保存を確認できていません。未保存のまま終了しますか？".into(),
-                "y: 未保存で終了   n / Esc: 戻る".into(),
-                format!("保存エラー: {error}"),
+                "Startup save unconfirmed. Exit without saving?".into(),
+                "y: Exit unsaved   n / Esc: Back".into(),
+                format!("Save error: {error}"),
             ],
-            Self::Saving(_) => vec!["起動時の状態を保存しています。".into()],
+            Self::Saving(_) => vec!["Saving startup state.".into()],
             Self::Ready(_) | Self::Exited(_) => Vec::new(),
         }
     }

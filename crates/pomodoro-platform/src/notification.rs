@@ -15,13 +15,10 @@ impl NotifySendNotifier {
     /// unsuccessfully.
     pub fn session_completed(self, completed: SessionKind) -> Result<(), NotificationError> {
         let (summary, body) = match completed {
-            SessionKind::Focus => ("集中タイム完了", "休憩しましょう。"),
-            SessionKind::QuickStart => (
-                "Quick Start完了",
-                "終了するか、集中タイムへ継続するか選んでください。",
-            ),
+            SessionKind::Focus => ("Focus complete", "Take a break."),
+            SessionKind::QuickStart => ("Quick Start complete", "Finish or continue to Focus."),
             SessionKind::ShortBreak | SessionKind::LongBreak => {
-                ("休憩完了", "次の集中タイムを始められます。")
+                ("Break complete", "Ready for the next Focus.")
             }
         };
 

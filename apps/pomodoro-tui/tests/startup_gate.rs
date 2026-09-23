@@ -63,8 +63,8 @@ fn recovery_prompt_requires_consent_and_decline_preserves_both_files() {
     let (prompt, visible) = render(&gate, 80, 24);
     assert!(visible);
     assert!(prompt.contains("1970-01-01 00:00:00.500 UTC"));
-    assert!(prompt.contains("失われる可能性"));
-    assert!(prompt.contains("y: 復旧して続行"));
+    assert!(prompt.contains("may be lost"));
+    assert!(prompt.contains("y: Recover"));
     assert!(matches!(
         location.clone().lock(),
         Err(StorageLockError::InUse { .. })
@@ -189,8 +189,8 @@ fn recovery_consent_waits_until_the_warning_and_keys_fit_on_screen() {
     let gate = open(&location);
     let (small, visible) = render(&gate, 40, 8);
     assert!(!visible);
-    assert!(small.contains("画面を広げてください"));
-    assert!(!small.contains("y: 復旧"));
+    assert!(small.contains("Enlarge the terminal"));
+    assert!(!small.contains("y: Recover"));
     let gate = gate
         .handle_key(KeyCode::Char('y'), visible, unavailable_time)
         .unwrap();
@@ -199,8 +199,8 @@ fn recovery_consent_waits_until_the_warning_and_keys_fit_on_screen() {
     let (enough, visible) = render(&gate, 50, 9);
     assert!(visible);
     assert!(enough.contains("1970-01-01 00:00:00.500 UTC"));
-    assert!(enough.contains("失われる可能性"));
-    assert!(enough.contains("y: 復旧して続行"));
+    assert!(enough.contains("may be lost"));
+    assert!(enough.contains("y: Recover"));
     let gate = gate
         .handle_key(KeyCode::Char('y'), visible, || Ok(Timestamp(2_000)))
         .unwrap()

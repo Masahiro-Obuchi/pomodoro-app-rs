@@ -91,11 +91,13 @@ impl Tui {
 
     fn expect(&mut self, text: &str) {
         let deadline = Instant::now() + TIMEOUT;
+        let expected: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
         loop {
-            // Ratatui positions every wide character separately. Match newly
-            // emitted text after removing CSI positioning/style sequences.
+            // Ratatui may position spaces with cursor commands rather than
+            // emitting them. Compare the visible words without whitespace.
             let emitted = without_csi(&self.received);
-            if emitted.contains(text) {
+            let compact: String = emitted.chars().filter(|ch| !ch.is_whitespace()).collect();
+            if compact.contains(&expected) {
                 self.received.clear();
                 return;
             }
@@ -166,9 +168,9 @@ fn executable_saves_restarts_and_rejects_second_launch() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("集中タイム");
+    tui.expect("Focus");
     tui.send(b" ");
-    tui.expect("開始操作を保存しました");
+    tui.expect("Session started and saved");
 
     let second = Command::new(env!("CARGO_BIN_EXE_pomodoro-tui"))
         .env("XDG_STATE_HOME", dir.path())
@@ -192,7 +194,7 @@ fn executable_saves_restarts_and_rejects_second_launch() {
     drop(store);
 
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("終了から復元・再開待ち");
+    tui.expect("Stopped on exit · Awaiting Resume");
     tui.send(b"q");
     assert!(tui.finish().success());
     let store = loaded(&location);
@@ -235,7 +237,7 @@ fn executable_restores_old_running_session_without_crediting_downtime() {
 
     // The executable's real startup clock is decades later than this saved run.
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("観測空白・再開待ち");
+    tui.expect("Timing gap · Awaiting Resume");
     tui.send(b"q");
     assert!(tui.finish().success());
 
@@ -291,23 +293,23 @@ fn executable_offers_recovery_and_waits_for_explicit_consent() {
     fs::write(location.state_path(), b"broken primary").unwrap();
 
     let mut tui = Tui::spawn_sized(dir.path(), 40, 8);
-    tui.expect("画面を広げてください");
+    tui.expect("Enlarge the terminal");
     tui.send(b"yq");
     assert!(tui.finish().success());
     assert_eq!(fs::read(location.state_path()).unwrap(), b"broken primary");
     assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
 
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("失われる可能性");
+    tui.expect("may be lost");
     tui.send(b"n");
     assert!(tui.finish().success());
     assert_eq!(fs::read(location.state_path()).unwrap(), b"broken primary");
     assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
 
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("失われる可能性");
+    tui.expect("may be lost");
     tui.send(b"y");
-    tui.expect("集中タイム");
+    tui.expect("Focus");
     tui.send(b"q");
     assert!(tui.finish().success());
     assert_eq!(
@@ -340,11 +342,11 @@ fn executable_handles_startup_save_failure_with_retry_or_unsaved_exit() {
         fs::create_dir(location.backup_path()).unwrap();
 
         let mut tui = Tui::spawn(dir.path());
-        tui.expect("起動時の保存を確認できません");
+        tui.expect("Startup save unconfirmed");
         if retry {
             fs::remove_dir(location.backup_path()).unwrap();
             tui.send(b"r");
-            tui.expect("観測空白・再開待ち");
+            tui.expect("Timing gap · Awaiting Resume");
             tui.send(b"q");
             assert!(tui.finish().success());
             assert!(loaded(&location).saved_state().unwrap().save_generation() > 1);
@@ -362,9 +364,9 @@ fn executable_reports_unsaved_shutdown_as_failure() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("集中タイム");
+    tui.expect("Focus");
     tui.send(b" ");
-    tui.expect("開始操作を保存しました");
+    tui.expect("Session started and saved");
     let original = fs::read(location.state_path()).unwrap();
     fs::remove_file(location.backup_path()).unwrap();
     fs::create_dir(location.backup_path()).unwrap();

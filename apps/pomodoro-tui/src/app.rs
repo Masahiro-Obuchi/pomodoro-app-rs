@@ -207,7 +207,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             self.show_help = false;
             self.message.clear();
         } else {
-            "設定は待機中のみ変更できます。".clone_into(&mut self.message);
+            "Settings are available only while ready.".clone_into(&mut self.message);
         }
     }
 
@@ -216,7 +216,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
         match key {
             KeyCode::Esc | KeyCode::Char('s') => {
                 self.settings = None;
-                "設定の変更をキャンセルしました".clone_into(&mut self.message);
+                "Settings changes canceled.".clone_into(&mut self.message);
             }
             KeyCode::Up | KeyCode::BackTab => draft.select_previous(),
             KeyCode::Down | KeyCode::Tab => draft.select_next(),
@@ -235,7 +235,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
                         self.on_error(&error);
                     }
                 },
-                Err(error) => self.message = format!("設定を適用できませんでした: {error}"),
+                Err(error) => self.message = format!("Could not apply settings: {error}"),
             },
             _ => {}
         }
@@ -243,9 +243,9 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
 
     fn on_error(&mut self, error: &ControllerError) {
         self.message = if self.pending_state().is_some() || self.shutdown_failed {
-            format!("保存を確認できませんでした: {error}")
+            format!("Could not confirm save: {error}")
         } else {
-            format!("操作できませんでした: {error}")
+            format!("Action failed: {error}")
         };
     }
 
@@ -259,35 +259,35 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             self.message.clear();
         }
         if let Some(error) = commit.notification_error {
-            let _ = write!(self.message, "（通知失敗: {error}）");
+            let _ = write!(self.message, " (Notification failed: {error})");
         }
     }
 }
 
 fn command_message(command: &Command) -> &'static str {
     match command {
-        Command::Configure(_) => "設定を保存し、ラウンドをリセットしました。",
-        Command::Start(_) => "開始操作を保存しました。",
-        Command::Pause(_) => "一時停止しました。",
-        Command::Resume(_) | Command::Return(_) => "復帰操作を保存しました。",
+        Command::Configure(_) => "Settings saved; round progress reset.",
+        Command::Start(_) => "Session started and saved.",
+        Command::Pause(_) => "Paused and saved.",
+        Command::Resume(_) | Command::Return(_) => "Resumed and saved.",
         Command::End {
             outcome: SessionOutcome::Reset,
             ..
-        } => "開始待ちに戻しました。次の開始は新しいセッションになります。",
-        Command::ResetReady => "すでに開始待ちです。状態は変更していません。",
-        Command::End { .. } | Command::SkipReady => "次のセッションの開始待ちへ移動しました。",
-        Command::DecideQuickStart { .. } => "Quick Startの選択を保存しました。",
-        Command::CloseApp => "状態を保存しました。終了します。",
-        _ => "操作を保存しました。",
+        } => "Reset to ready. The next start creates a new session.",
+        Command::ResetReady => "Already ready; nothing changed.",
+        Command::End { .. } | Command::SkipReady => "Ready for the next session.",
+        Command::DecideQuickStart { .. } => "Quick Start choice saved.",
+        Command::CloseApp => "State saved. Exiting.",
+        _ => "Action saved.",
     }
 }
 
 const fn completion_message(kind: SessionKind) -> &'static str {
     match kind {
-        SessionKind::Focus => "集中タイムが完了しました。休憩しましょう！",
-        SessionKind::QuickStart => "Quick Startが完了しました。終了または継続を選んでください。",
+        SessionKind::Focus => "Focus complete. Take a break!",
+        SessionKind::QuickStart => "Quick Start complete. Finish or continue to Focus.",
         SessionKind::ShortBreak | SessionKind::LongBreak => {
-            "休憩が完了しました。次の集中タイムを始められます。"
+            "Break complete. Ready for the next Focus."
         }
     }
 }
