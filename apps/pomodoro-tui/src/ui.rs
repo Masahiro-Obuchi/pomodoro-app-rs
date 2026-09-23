@@ -16,6 +16,7 @@ use crate::{
     controller::{Clock, CompletionNotifier, SaveStore},
     startup_gate::StartupGate,
     ui_settings::{centered, draw_settings},
+    ui_task::draw_task,
 };
 
 /// Returns whether the recovery timestamp, loss warning and consent keys fit.
@@ -115,6 +116,9 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     if let Some(settings) = app.settings() {
         draw_settings(frame, settings);
     }
+    if let Some(task) = app.task_edit() {
+        draw_task(frame, task, app.message());
+    }
 }
 
 fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
@@ -122,7 +126,7 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
 ) -> Vec<Line<'_>> {
     let mut footer = vec![];
     match app.input_context() {
-        InputContext::Closed | InputContext::Settings => {}
+        InputContext::Closed | InputContext::Settings | InputContext::Task => {}
         InputContext::ConfirmUnsavedExit => {
             footer.push(Line::from(
                 "Some changes are not saved. Exit without saving?",

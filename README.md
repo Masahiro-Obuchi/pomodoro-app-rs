@@ -12,6 +12,7 @@ The project currently provides a terminal user interface built with Ratatui. The
 - 25-minute focus sessions, 5-minute short breaks, and 15-minute long breaks
 - Long break after every four completed focus sessions
 - Start, pause, resume, reset, and skip controls
+- Optional Current Task entry before Focus, saved with the session
 - In-app editing for session durations and the number of focus sessions per round
 - Monotonic timing that stops during application closure and observation gaps, including system sleep
 - V1 JSON persistence with atomic saves, backup recovery, and single-process locking
@@ -28,7 +29,7 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Saved Current Tasks are displayed, restored distractions can be returned from, and restored Quick Start decisions can be finished or continued.
 
-These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry, starting Quick Start, and reporting a new distraction through the TUI are Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
+These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry is available; starting Quick Start and reporting a new distraction through the TUI remain Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
 
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
@@ -54,6 +55,7 @@ cargo run -p pomodoro-tui
 | Key | Action |
 | --- | --- |
 | `Space` | Start, pause, or resume |
+| `t` | Edit the optional Current Task while waiting to start Focus |
 | `r` | End/reset the current session; the next start creates a new session |
 | `n` | Skip to the next session |
 | `s` | Open settings while Ready (waiting to start) |
@@ -61,6 +63,8 @@ cargo run -p pomodoro-tui
 | `q` | Save and quit |
 
 For a restored distraction, `Space` records Return. At a restored Quick Start decision, `f` finishes and `c` starts a linked Focus session. Breaks and following sessions always wait for manual start.
+
+In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 
 ### Storage, recovery, and save failures
 

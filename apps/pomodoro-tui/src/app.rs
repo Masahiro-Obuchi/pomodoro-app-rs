@@ -2,11 +2,12 @@
 
 use std::{cell::RefCell, fmt::Write as _};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use pomodoro_core::{
-    Command, DomainError, DomainState, ProgressState, ReflectionSummary, SessionKind,
+    Command, CurrentTask, DomainError, DomainState, ProgressState, ReflectionSummary, SessionKind,
     SessionOutcome,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::controller::{
     Clock, Commit, CompletionNotifier, Controller, ControllerError, ExitOutcome, SaveStore,
@@ -30,6 +31,7 @@ pub(crate) enum InputContext {
     Closed,
     ConfirmUnsavedExit,
     SaveBlocked,
+    Task,
     Settings,
     Normal,
 }
@@ -39,6 +41,7 @@ pub struct App<S, C, N> {
     history_reflection: RefCell<HistoryReflection>,
     show_help: bool,
     settings: Option<SettingsDraft>,
+    task_edit: Option<String>,
     message: String,
     unsaved_exit: UnsavedExit,
     shutdown_failed: bool,
@@ -52,6 +55,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             history_reflection: RefCell::default(),
             show_help: false,
             settings: None,
+            task_edit: None,
             message: String::new(),
             unsaved_exit: UnsavedExit::None,
             shutdown_failed: false,
@@ -93,6 +97,11 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     }
 
     #[must_use]
+    pub fn task_edit(&self) -> Option<&str> {
+        self.task_edit.as_deref()
+    }
+
+    #[must_use]
     pub const fn confirming_unsaved_exit(&self) -> bool {
         matches!(self.unsaved_exit, UnsavedExit::Confirming)
     }
@@ -124,7 +133,22 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
         }
     }
 
+    pub fn handle_event(&mut self, event: Event) {
+        match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key_event(key),
+            Event::Paste(text) if self.input_context() == InputContext::Task => {
+                self.paste_task(&text);
+            }
+            _ => {}
+        }
+    }
+
     pub fn handle_key(&mut self, key: KeyCode) {
+        self.handle_key_event(KeyEvent::new(key, KeyModifiers::NONE));
+    }
+
+    fn handle_key_event(&mut self, event: KeyEvent) {
+        let key = event.code;
         match self.input_context() {
             InputContext::Closed => {}
             InputContext::ConfirmUnsavedExit => match key {
@@ -133,13 +157,13 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
                 _ => {}
             },
             InputContext::SaveBlocked => self.handle_save_blocked_key(key),
+            InputContext::Task => self.handle_task_key(event),
             InputContext::Settings => self.handle_settings_key(key),
             InputContext::Normal => self.handle_normal_key(key),
         }
     }
 
-    // Derive the input priority from the current application and controller state.
-    // Phase 3 can add task editing without another early-return path in handle_key.
+    // Derive input priority from the application and save state.
     pub(crate) fn input_context(&self) -> InputContext {
         if self.should_quit() {
             InputContext::Closed
@@ -147,6 +171,8 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             InputContext::ConfirmUnsavedExit
         } else if self.pending_state().is_some() || self.shutdown_failed {
             InputContext::SaveBlocked
+        } else if self.task_edit.is_some() {
+            InputContext::Task
         } else if self.settings.is_some() {
             InputContext::Settings
         } else {
@@ -187,6 +213,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
                 }
             },
             Some(NormalAction::RequestSettings) => self.open_settings(),
+            Some(NormalAction::RequestTask) => self.open_task(),
             Some(NormalAction::Command(command)) => match self.controller.execute(command) {
                 Ok(commit) => self.on_commit(commit),
                 Err(error) => self.on_error(&error),
@@ -208,6 +235,95 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             self.message.clear();
         } else {
             "Settings are available only while ready.".clone_into(&mut self.message);
+        }
+    }
+
+    fn open_task(&mut self) {
+        if let ProgressState::Ready {
+            next_kind: SessionKind::Focus,
+            current_task_draft,
+        } = &self.state().snapshot().state
+        {
+            self.task_edit = Some(
+                current_task_draft
+                    .as_ref()
+                    .map_or_else(String::new, |task| task.as_str().to_owned()),
+            );
+            self.show_help = false;
+            self.message.clear();
+        }
+    }
+
+    fn handle_task_key(&mut self, event: KeyEvent) {
+        if event.modifiers.intersects(
+            KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER | KeyModifiers::HYPER,
+        ) {
+            return;
+        }
+        match event.code {
+            KeyCode::Esc => {
+                self.task_edit = None;
+                self.message = "Task edit canceled.".into();
+            }
+            KeyCode::Backspace => {
+                let draft = self.task_edit.as_mut().expect("task editor is open");
+                if let Some((index, _)) = draft.as_str().grapheme_indices(true).next_back() {
+                    draft.truncate(index);
+                }
+                self.message.clear();
+            }
+            KeyCode::Enter => self.confirm_task(),
+            KeyCode::Char(ch) if !is_line_separator(ch) && !ch.is_control() => {
+                self.task_edit
+                    .as_mut()
+                    .expect("task editor is open")
+                    .push(ch);
+                self.message.clear();
+            }
+            _ => {}
+        }
+    }
+
+    fn paste_task(&mut self, text: &str) {
+        if text.chars().any(is_line_separator) {
+            self.message = "Task must be a single line; paste was rejected.".into();
+        } else if text.chars().any(char::is_control) {
+            self.message = "Task cannot contain control characters; paste was rejected.".into();
+        } else {
+            self.task_edit
+                .as_mut()
+                .expect("task editor is open")
+                .push_str(text);
+            self.message.clear();
+        }
+    }
+
+    fn confirm_task(&mut self) {
+        let text = self.task_edit.as_ref().expect("task editor is open");
+        let task = match CurrentTask::parse(text) {
+            Ok(task) => task,
+            Err(error) => {
+                self.message = format!("Could not save task: {error}");
+                return;
+            }
+        };
+        let ProgressState::Ready {
+            current_task_draft, ..
+        } = &self.state().snapshot().state
+        else {
+            unreachable!("task editor is only available while ready")
+        };
+        if *current_task_draft == task {
+            self.task_edit = None;
+            self.message = "Task unchanged.".into();
+            return;
+        }
+        match self.controller.execute(Command::SetCurrentTask(task)) {
+            Ok(commit) => {
+                self.task_edit = None;
+                self.on_commit(commit);
+            }
+            Err(error) => self.on_error(&error),
         }
     }
 
@@ -242,6 +358,9 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     }
 
     fn on_error(&mut self, error: &ControllerError) {
+        if self.pending_state().is_some() {
+            self.task_edit = None;
+        }
         self.message = if self.pending_state().is_some() || self.shutdown_failed {
             format!("Could not confirm save: {error}")
         } else {
@@ -266,6 +385,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
 
 fn command_message(command: &Command) -> &'static str {
     match command {
+        Command::SetCurrentTask(_) => "Task saved.",
         Command::Configure(_) => "Settings saved; round progress reset.",
         Command::Start(_) => "Session started and saved.",
         Command::Pause(_) => "Paused and saved.",
@@ -280,6 +400,13 @@ fn command_message(command: &Command) -> &'static str {
         Command::CloseApp => "State saved. Exiting.",
         _ => "Action saved.",
     }
+}
+
+fn is_line_separator(ch: char) -> bool {
+    matches!(
+        ch,
+        '\r' | '\n' | '\u{000B}' | '\u{000C}' | '\u{0085}' | '\u{2028}' | '\u{2029}'
+    )
 }
 
 const fn completion_message(kind: SessionKind) -> &'static str {

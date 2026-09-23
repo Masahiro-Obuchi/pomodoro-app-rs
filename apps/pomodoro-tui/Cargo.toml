@@ -11,6 +11,7 @@ crossterm.workspace = true
 pomodoro-core = { path = "../../crates/pomodoro-core" }
 pomodoro-platform = { path = "../../crates/pomodoro-platform" }
 ratatui.workspace = true
+unicode-segmentation.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 rustix = { workspace = true, features = ["pty", "termios", "process"] }

@@ -6,6 +6,7 @@ use pomodoro_core::{
 
 pub(super) enum NormalAction {
     Command(Command),
+    RequestTask,
     RequestSettings,
     ToggleHelp,
     Shutdown,
@@ -41,11 +42,21 @@ pub(super) struct NormalControls {
 impl NormalControls {
     pub(super) fn for_snapshot(snapshot: &PomodoroState) -> Self {
         let session = match &snapshot.state {
-            ProgressState::Ready { next_kind, .. } => vec![
-                Binding::command(' ', "Space: Start", Command::Start(*next_kind)),
-                Binding::command('r', "r: Reset", Command::ResetReady),
-                Binding::command('n', "n: Skip", Command::SkipReady),
-            ],
+            ProgressState::Ready { next_kind, .. } => {
+                let mut bindings = vec![
+                    Binding::command(' ', "Space: Start", Command::Start(*next_kind)),
+                    Binding::command('r', "r: Reset", Command::ResetReady),
+                    Binding::command('n', "n: Skip", Command::SkipReady),
+                ];
+                if *next_kind == pomodoro_core::SessionKind::Focus {
+                    bindings.push(Binding::new(
+                        't',
+                        Some("t: Edit task"),
+                        NormalAction::RequestTask,
+                    ));
+                }
+                bindings
+            }
             ProgressState::Active { session, timer } => {
                 let (space_hint, space_command) = match timer {
                     TimerState::Running { .. } => ("Space: Pause", Command::Pause(session.id)),
