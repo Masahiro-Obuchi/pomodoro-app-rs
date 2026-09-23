@@ -90,6 +90,12 @@ fn crash_boundaries_in_isolated_process() {
 }
 
 fn process_stop_at_each_save_boundary_keeps_a_whole_old_or_new_primary() {
+    let mut prior: serde_json::Value = serde_json::from_slice(VALID).unwrap();
+    prior["save_generation"] = 6.into();
+    prior["saved_at"] = "1970-01-01T00:00:00.000Z".into();
+    let prior_backup = serde_json::to_vec(&prior).unwrap();
+    assert!(crate::schema_v1::codec::PersistedStateV1::decode(&prior_backup).is_ok());
+    assert_ne!(prior_backup, VALID);
     let stages = std::iter::once(SaveStage::SyncStorageAncestry)
         .chain(SAVE_STAGES)
         .map(|stage| format!("{stage:?}"))
@@ -98,7 +104,7 @@ fn process_stop_at_each_save_boundary_keeps_a_whole_old_or_new_primary() {
         let directory = tempfile::tempdir().unwrap();
         let location = StorageLocation::at(directory.path().to_owned());
         fs::write(location.state_path(), VALID).unwrap();
-        fs::write(location.backup_path(), VALID).unwrap();
+        fs::write(location.backup_path(), &prior_backup).unwrap();
         CrashChild::stop(&location, &stage);
         // Kernel locks are released by process death; leftover temp files cannot
         // override a valid primary. This is not a power-loss durability test.
@@ -111,7 +117,19 @@ fn process_stop_at_each_save_boundary_keeps_a_whole_old_or_new_primary() {
         } else {
             assert_eq!(saved.original_bytes(), VALID, "{stage}");
         }
-        assert_eq!(fs::read(location.backup_path()).unwrap(), VALID, "{stage}");
+        let expected_backup = match stage.as_str() {
+            "SyncStorageAncestry"
+            | "CreateBackupTemp"
+            | "WriteBackupTemp"
+            | "SyncBackupTemp"
+            | "RenameBackup" => prior_backup.as_slice(),
+            _ => VALID,
+        };
+        assert_eq!(
+            fs::read(location.backup_path()).unwrap(),
+            expected_backup,
+            "{stage}"
+        );
     }
 }
 

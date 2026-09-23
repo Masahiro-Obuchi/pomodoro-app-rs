@@ -52,12 +52,16 @@ fn run() -> Result<ExitOutcome, Box<dyn Error>> {
             StartupGate::Ready(store) => break *store,
             StartupGate::Exited(outcome) => return Ok(outcome),
             waiting => {
-                terminal.draw(|frame| ui::draw_startup(frame, &waiting))?;
+                let mut recovery_prompt_visible = false;
+                terminal.draw(|frame| {
+                    recovery_prompt_visible = ui::draw_startup(frame, &waiting);
+                })?;
                 gate = loop {
                     match event::read()? {
                         Event::Key(key) if key.kind == KeyEventKind::Press => {
-                            let at = ObservationClock::new()?.at();
-                            break waiting.handle_key(key.code, at)?;
+                            break waiting.handle_key(key.code, recovery_prompt_visible, || {
+                                ObservationClock::new().map(|clock| clock.at())
+                            })?;
                         }
                         Event::Resize(..) => break waiting,
                         _ => {}

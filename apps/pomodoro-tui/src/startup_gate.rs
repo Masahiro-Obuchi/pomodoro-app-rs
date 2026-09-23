@@ -1,9 +1,11 @@
 //! User decisions before the normal controller may receive input.
 
+use std::error::Error;
+
 use chrono::{DateTime, Utc};
 use crossterm::event::KeyCode;
 use pomodoro_core::Timestamp;
-use pomodoro_platform::{RecoveryCandidate, SaveError, WritableStorage};
+use pomodoro_platform::{RecoveryCandidate, SaveError, TimeError, WritableStorage};
 
 use crate::controller::{ExitOutcome, Startup, StartupSave};
 
@@ -43,17 +45,23 @@ impl StartupGate {
         }
     }
 
-    /// Handles only startup keys. The recovery timestamp is sampled at consent,
-    /// while retries retain the candidate's original timestamp.
+    /// Handles only startup keys. The clock is sampled only for visible recovery
+    /// consent. Retry, cancellation and unsaved-exit choices remain available
+    /// even when the wall clock cannot provide a new timestamp.
     ///
     /// # Errors
-    /// Returns a candidate validation error before any recovery file is written.
-    pub fn handle_key(self, key: KeyCode, at: Timestamp) -> Result<Self, SaveError> {
+    /// Returns a clock or candidate validation error before any recovery file is written.
+    pub fn handle_key(
+        self,
+        key: KeyCode,
+        recovery_prompt_visible: bool,
+        read_time: impl FnOnce() -> Result<Timestamp, TimeError>,
+    ) -> Result<Self, Box<dyn Error>> {
         match self {
             Self::Recovery(candidate) => match key {
-                KeyCode::Char('y') => {
-                    Ok(Self::Saving(StartupSave::confirm_recovery(*candidate, at)?))
-                }
+                KeyCode::Char('y') if recovery_prompt_visible => Ok(Self::Saving(
+                    StartupSave::confirm_recovery(*candidate, read_time()?)?,
+                )),
                 KeyCode::Char('n' | 'q') | KeyCode::Esc => {
                     Ok(Self::Exited(Startup::RecoveryRequired(candidate).cancel()))
                 }

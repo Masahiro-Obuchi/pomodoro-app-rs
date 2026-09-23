@@ -43,6 +43,10 @@ struct Tui {
 
 impl Tui {
     fn spawn(directory: &Path) -> Self {
+        Self::spawn_sized(directory, 100, 30)
+    }
+
+    fn spawn_sized(directory: &Path, width: u16, height: u16) -> Self {
         let flags = OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC;
         let master = openpt(flags).unwrap();
         unlockpt(&master).unwrap();
@@ -50,8 +54,8 @@ impl Tui {
         tcsetwinsize(
             &slave,
             Winsize {
-                ws_row: 30,
-                ws_col: 100,
+                ws_row: height,
+                ws_col: width,
                 ws_xpixel: 0,
                 ws_ypixel: 0,
             },
@@ -215,6 +219,13 @@ fn executable_offers_recovery_and_waits_for_explicit_consent() {
     fs::create_dir_all(location.directory()).unwrap();
     fs::write(location.backup_path(), VALID).unwrap();
     fs::write(location.state_path(), b"broken primary").unwrap();
+
+    let mut tui = Tui::spawn_sized(dir.path(), 40, 8);
+    tui.expect("画面を広げてください");
+    tui.send(b"yq");
+    assert!(tui.finish().success());
+    assert_eq!(fs::read(location.state_path()).unwrap(), b"broken primary");
+    assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
 
     let mut tui = Tui::spawn(dir.path());
     tui.expect("失われる可能性");
