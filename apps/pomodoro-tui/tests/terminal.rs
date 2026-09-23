@@ -163,6 +163,121 @@ fn loaded(location: &StorageLocation) -> WritableStorage {
     store
 }
 
+fn paste(tui: &mut Tui, text: &str) {
+    tui.send(b"\x1b[200~");
+    tui.send(text.as_bytes());
+    tui.send(b"\x1b[201~");
+}
+
+#[test]
+fn executable_edits_task_without_saving_until_enter_and_restores_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("t: Edit task");
+    let initial = fs::read(location.state_path()).unwrap();
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    paste(&mut tui, "  原稿を書く  ");
+    tui.expect("原稿を書く");
+    assert_eq!(fs::read(location.state_path()).unwrap(), initial);
+    tui.send(b"\x1b");
+    tui.expect("Task edit canceled");
+    assert_eq!(fs::read(location.state_path()).unwrap(), initial);
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    paste(&mut tui, "  原稿を書く  ");
+    tui.expect("原稿を書く");
+    tui.send(b"\r");
+    tui.expect("Task saved");
+    assert_ne!(fs::read(location.state_path()).unwrap(), initial);
+    tui.send(b" ");
+    tui.expect("Running");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+    let store = loaded(&location);
+    let ProgressState::Active { session, .. } =
+        &store.saved_state().unwrap().domain().snapshot().state
+    else {
+        panic!("expected active Focus")
+    };
+    assert_eq!(
+        session.current_task.as_ref().unwrap().as_str(),
+        "原稿を書く"
+    );
+    drop(store);
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("原稿を書く");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+}
+
+#[test]
+fn bracketed_multiline_paste_stays_in_task_editor_and_plain_key_stream_can_confirm() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("Focus");
+    let initial = fs::read(location.state_path()).unwrap();
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    paste(&mut tui, "first\nq n");
+    tui.expect("paste was rejected");
+    assert_eq!(fs::read(location.state_path()).unwrap(), initial);
+    tui.send(b"a");
+    tui.send(b"\r");
+    tui.expect("Task saved");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+    let store = loaded(&location);
+    let ProgressState::Ready {
+        current_task_draft, ..
+    } = &store.saved_state().unwrap().domain().snapshot().state
+    else {
+        panic!("expected ready")
+    };
+    assert_eq!(current_task_draft.as_ref().unwrap().as_str(), "a");
+    drop(store);
+
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("Task: a");
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    // A terminal without bracketed paste sends ordinary keys. Its first Enter
+    // confirms the edit, so following keys can reach normal controls.
+    tui.send(b"b\r");
+    tui.expect("Task saved");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+    let store = loaded(&location);
+    let ProgressState::Ready {
+        current_task_draft, ..
+    } = &store.saved_state().unwrap().domain().snapshot().state
+    else {
+        panic!("expected ready")
+    };
+    assert_eq!(current_task_draft.as_ref().unwrap().as_str(), "ab");
+}
+
+#[test]
+fn executable_can_start_focus_without_a_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("Focus");
+    tui.send(b" ");
+    tui.expect("Session started and saved");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+    let store = loaded(&location);
+    let ProgressState::Active { session, .. } =
+        &store.saved_state().unwrap().domain().snapshot().state
+    else {
+        panic!("expected active Focus")
+    };
+    assert!(session.current_task.is_none());
+}
+
 #[test]
 fn executable_saves_restarts_and_rejects_second_launch() {
     let dir = tempfile::tempdir().unwrap();
