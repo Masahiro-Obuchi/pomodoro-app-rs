@@ -11,8 +11,8 @@ use std::{
 };
 
 use pomodoro_core::{
-    Command as DomainCommand, DomainState, EventKind, InterruptionKind, ProgressState, SessionKind,
-    TimerConfig, TimerState, Timestamp,
+    Command as DomainCommand, DomainState, EventKind, GapReason, InterruptionKind, Observation,
+    ProgressState, SessionKind, TimerConfig, TimerState, Timestamp,
 };
 use pomodoro_platform::{LoadOutcome, StorageLocation, WritableStorage};
 use rustix::{
@@ -162,7 +162,7 @@ fn loaded(location: &StorageLocation) -> WritableStorage {
 }
 
 #[test]
-fn executable_saves_restarts_without_crediting_downtime_and_rejects_second_launch() {
+fn executable_saves_restarts_and_rejects_second_launch() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
     let mut tui = Tui::spawn(dir.path());
@@ -207,6 +207,76 @@ fn executable_saves_restarts_without_crediting_downtime_and_rejects_second_launc
             .events
             .iter()
             .filter(|event| matches!(event.payload, EventKind::AppRestored))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn executable_restores_old_running_session_without_crediting_downtime() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
+        panic!("expected new store");
+    };
+    let mut domain = DomainState::new(TimerConfig::default()).unwrap();
+    domain
+        .apply(DomainCommand::Start(SessionKind::Focus), Timestamp(1_000))
+        .unwrap();
+    domain
+        .observe(Observation {
+            previous_at: Timestamp(1_000),
+            at: Timestamp(1_500),
+            monotonic_elapsed_ms: Some(500),
+        })
+        .unwrap();
+    store.save(&domain, Timestamp(1_500)).unwrap();
+    drop(store);
+
+    // The executable's real startup clock is decades later than this saved run.
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("観測空白・再開待ち");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+
+    let store = loaded(&location);
+    let domain = store.saved_state().unwrap().domain();
+    let ProgressState::Active {
+        session,
+        timer: TimerState::Interrupted { interruption },
+    } = &domain.snapshot().state
+    else {
+        panic!("restart must interrupt the running session");
+    };
+    assert_eq!(session.kind, SessionKind::Focus);
+    assert_eq!(session.elapsed_ms, 500);
+    assert_eq!(interruption.kind, InterruptionKind::ObservationGap);
+    assert_eq!(interruption.started_at, Timestamp(1_500));
+    assert_eq!(
+        domain
+            .history()
+            .events
+            .iter()
+            .filter_map(|event| match event.payload {
+                EventKind::RunIntervalRecorded { credited_ms, .. } => Some(credited_ms),
+                _ => None,
+            })
+            .sum::<u64>(),
+        500
+    );
+    assert_eq!(
+        domain
+            .history()
+            .events
+            .iter()
+            .filter(|event| matches!(
+                event.payload,
+                EventKind::ObservationGapDetected {
+                    last_confirmed_at: Timestamp(1_500),
+                    reason: GapReason::Restart,
+                    ..
+                }
+            ))
             .count(),
         1
     );
