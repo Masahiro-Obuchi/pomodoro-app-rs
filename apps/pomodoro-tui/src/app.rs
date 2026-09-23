@@ -23,6 +23,15 @@ enum UnsavedExit {
     Confirmed,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputContext {
+    Closed,
+    ConfirmUnsavedExit,
+    SaveBlocked,
+    Settings,
+    Normal,
+}
+
 pub struct App<S, C, N> {
     controller: Controller<S, C, N>,
     history_reflection: RefCell<HistoryReflection>,
@@ -114,47 +123,59 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     }
 
     pub fn handle_key(&mut self, key: KeyCode) {
-        if self.should_quit() {
-            return;
-        }
-        if self.confirming_unsaved_exit() {
-            match key {
+        match self.input_context() {
+            InputContext::Closed => {}
+            InputContext::ConfirmUnsavedExit => match key {
                 KeyCode::Char('y') => self.unsaved_exit = UnsavedExit::Confirmed,
                 KeyCode::Esc | KeyCode::Char('n') => self.unsaved_exit = UnsavedExit::None,
                 _ => {}
-            }
-            return;
+            },
+            InputContext::SaveBlocked => self.handle_save_blocked_key(key),
+            InputContext::Settings => self.handle_settings_key(key),
+            InputContext::Normal => self.handle_normal_key(key),
         }
-        if key == KeyCode::Char('?') {
-            self.show_help = !self.show_help;
-            return;
+    }
+
+    // Derive the input priority from the current application and controller state.
+    // Phase 3 can add task editing without another early-return path in handle_key.
+    fn input_context(&self) -> InputContext {
+        if self.should_quit() {
+            InputContext::Closed
+        } else if self.confirming_unsaved_exit() {
+            InputContext::ConfirmUnsavedExit
+        } else if self.pending_state().is_some() || self.shutdown_failed {
+            InputContext::SaveBlocked
+        } else if self.settings.is_some() {
+            InputContext::Settings
+        } else {
+            InputContext::Normal
         }
-        if self.pending_state().is_some() || self.shutdown_failed {
-            match key {
-                KeyCode::Char('r') => {
-                    let result = if self.pending_state().is_some() {
-                        self.controller.retry()
-                    } else {
-                        self.controller.shutdown()
-                    };
-                    match result {
-                        Ok(commit) => {
-                            self.shutdown_failed = false;
-                            self.on_commit(commit);
-                        }
-                        Err(error) => self.on_error(&error),
-                    }
-                }
-                KeyCode::Char('Q') => self.unsaved_exit = UnsavedExit::Confirming,
-                _ => {}
-            }
-            return;
-        }
-        if self.settings.is_some() {
-            self.handle_settings_key(key);
-            return;
-        }
+    }
+
+    fn handle_save_blocked_key(&mut self, key: KeyCode) {
         match key {
+            KeyCode::Char('r') => {
+                let result = if self.pending_state().is_some() {
+                    self.controller.retry()
+                } else {
+                    self.controller.shutdown()
+                };
+                match result {
+                    Ok(commit) => {
+                        self.shutdown_failed = false;
+                        self.on_commit(commit);
+                    }
+                    Err(error) => self.on_error(&error),
+                }
+            }
+            KeyCode::Char('Q') => self.unsaved_exit = UnsavedExit::Confirming,
+            _ => {}
+        }
+    }
+
+    fn handle_normal_key(&mut self, key: KeyCode) {
+        match key {
+            KeyCode::Char('?') => self.show_help = !self.show_help,
             KeyCode::Char('q') => match self.controller.shutdown() {
                 Ok(commit) => self.on_commit(commit),
                 Err(error) => {
