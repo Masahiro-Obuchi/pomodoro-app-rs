@@ -43,14 +43,6 @@ fn interruption(domain: &DomainState) -> &Interruption {
 }
 
 #[test]
-fn formats_a_timestamp_as_a_date() {
-    let date = local_date_at(0).unwrap();
-    assert_eq!(date.len(), 10);
-    assert_eq!(date.as_bytes()[4], b'-');
-    assert_eq!(date.as_bytes()[7], b'-');
-}
-
-#[test]
 fn continuous_observations_use_monotonic_elapsed_and_preserve_utc_boundaries() {
     let base = Instant::now();
     let mut clock = ObservationClock::from_reading(reading(1_000, base)).unwrap();

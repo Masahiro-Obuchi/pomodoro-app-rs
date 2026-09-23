@@ -35,17 +35,6 @@ impl NotifySendNotifier {
             Err(NotificationError::UnsuccessfulExit(status.code()))
         }
     }
-
-    /// Temporary entry point until the executable switches to V1.
-    ///
-    /// # Errors
-    /// Returns the same delivery errors as [`Self::session_completed`].
-    pub fn legacy_session_completed(
-        self,
-        completed: pomodoro_core::legacy::SessionKind,
-    ) -> Result<(), NotificationError> {
-        self.session_completed(completed.into())
-    }
 }
 
 #[derive(Debug)]

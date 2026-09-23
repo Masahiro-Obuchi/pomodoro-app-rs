@@ -28,7 +28,7 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Saved Current Tasks are displayed, restored distractions can be returned from, and restored Quick Start decisions can be finished or continued.
 
-These documents also define features that are still planned. Current Task entry, starting Quick Start, and reporting a new distraction through the TUI are Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4. Temporary legacy modules remain in the source until the next cleanup step, but the executable no longer uses them.
+These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry, starting Quick Start, and reporting a new distraction through the TUI are Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
 
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
