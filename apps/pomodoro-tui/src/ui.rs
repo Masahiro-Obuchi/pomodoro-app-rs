@@ -14,8 +14,19 @@ use ratatui::{
 use crate::{
     app::App,
     controller::{Clock, CompletionNotifier, SaveStore},
+    startup_gate::StartupGate,
     ui_settings::{centered, draw_settings},
 };
+
+pub fn draw_startup(frame: &mut Frame<'_>, gate: &StartupGate) {
+    let lines = gate.prompt_lines().join("\n");
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::default().borders(Borders::ALL).title(" 起動と復旧 ")),
+        centered(frame.area(), 82, 14),
+    );
+}
 
 pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     frame: &mut Frame<'_>,

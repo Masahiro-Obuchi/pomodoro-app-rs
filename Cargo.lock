@@ -958,10 +958,12 @@ dependencies = [
 name = "pomodoro-tui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crossterm",
  "pomodoro-core",
  "pomodoro-platform",
  "ratatui",
+ "rustix",
  "tempfile",
 ]
 

@@ -13,8 +13,10 @@ The project currently provides a terminal user interface built with Ratatui. The
 - Long break after every four completed focus sessions
 - Start, pause, resume, reset, and skip controls
 - In-app editing for session durations and the number of focus sessions per round
-- Deadline-based timing that remains accurate after delayed redraws or system sleep
-- Persistent timer state and lightweight daily history
+- Monotonic timing that stops during application closure and observation gaps, including system sleep
+- V1 JSON persistence with atomic saves, backup recovery, and single-process locking
+- Save retry and explicit unsaved-exit controls
+- Cumulative work time, focus completions, distractions, and returns derived from stored records
 - Linux desktop notifications through `notify-send`
 - Platform-independent timer logic with deterministic unit tests
 
@@ -24,11 +26,9 @@ The project currently provides a terminal user interface built with Ratatui. The
 - [Domain Model](docs/DOMAIN_MODEL.md): state ownership, session and interruption models, invariants, and transitions.
 - [Persistence Schema](docs/PERSISTENCE_SCHEMA.md): single-JSON format, validation, atomic saves, recovery, and single-process protection.
 
-These documents define the accepted target behavior; they do not imply that the new features are implemented. In particular, the target specification stops timing during application closure and observation gaps, unlike the current deadline-based restoration behavior described above.
+The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Saved Current Tasks are displayed, restored distractions can be returned from, and restored Quick Start decisions can be finished or continued.
 
-The new domain API is available in `pomodoro-core`, but the TUI and existing storage still use the explicitly isolated `pomodoro_core::legacy` API until the V1 storage cutover. Quick Start, interruption/recovery history, and the new timing rules are not yet available through the TUI. This temporary boundary does not migrate or synchronize old data.
-
-The V1 controller and its new App/rendering path are covered by tests, including save retries, unsaved-exit confirmation, and restored-state controls; the normal executable will adopt them in the next cutover step.
+These documents also define features that are still planned. Current Task entry, starting Quick Start, and reporting a new distraction through the TUI are Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4. Temporary legacy modules remain in the source until the next cleanup step, but the executable no longer uses them.
 
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
@@ -38,6 +38,7 @@ The [Phase 2 plan](docs/PHASE2_PLAN.md) splits persistence and the V1 TUI cutove
 
 ## Requirements
 
+- Linux with a local filesystem for saved state
 - Rust 1.86 or later
 - A terminal supported by Crossterm
 - `notify-send` for Linux desktop notifications (optional)
@@ -53,13 +54,23 @@ cargo run -p pomodoro-tui
 | Key | Action |
 | --- | --- |
 | `Space` | Start, pause, or resume |
-| `r` | Reset the current session |
+| `r` | End/reset the current session; the next start creates a new session |
 | `n` | Skip to the next session |
-| `s` | Open settings while the timer is idle |
+| `s` | Open settings while Ready (waiting to start) |
 | `?` | Toggle help |
 | `q` | Save and quit |
 
-Timer state and history are stored in `pomodoro-app-rs/state.json` under the user's XDG state directory.
+For a restored distraction, `Space` records Return. At a restored Quick Start decision, `f` finishes and `c` starts a linked Focus session. Breaks and following sessions always wait for manual start.
+
+### Storage, recovery, and save failures
+
+State and history are stored in `pomodoro-app-rs/state.json` under the user's XDG state directory (`$XDG_STATE_HOME`, or normally `~/.local/state`). The same directory holds `state.json.bak` and `state.lock`. A second instance using that directory is rejected. The lock file remains after exit; its existence alone does not mean another instance is running.
+
+Startup validates the entire V1 file before allowing normal operation. Old unversioned data and unsupported versions stop startup without being overwritten or automatically replaced from backup. To start fresh, stop all instances and explicitly move the old application state directory aside, or select a separate empty XDG state directory. Settings and history from the old format are not imported.
+
+If the primary is missing or corrupt and `state.json.bak` is valid, a startup prompt shows the backup's UTC save time and warns that later records may be lost. Press `y` to recover, or `n`, `q`, or `Esc` to exit without changing saved data. Recovery preserves the backup and archives any existing primary in a uniquely named quarantine file before replacement. Temporary files are never automatically adopted; if no valid primary or backup is available, startup stops and preserves the files.
+
+On a failed or uncertain save, timing and normal controls are held. Press `r` to retry the same candidate, or `Q` followed by `y` to exit without a confirmed save (`n` / `Esc` cancels that exit). Unsaved exit returns a nonzero process status. After recovery from a failed save, a running session waits for manual resumption. Completion notifications are sent only after the corresponding save succeeds.
 
 ## Development
 
@@ -67,7 +78,10 @@ Timer state and history are stored in `pomodoro-app-rs/state.json` under the use
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo test -p pomodoro-platform --lib crash_boundaries_in_isolated_process -- --ignored
 ```
+
+The crash suite runs separately so subprocess creation cannot temporarily inherit locks held by parallel unit tests. It stops children at save boundaries and checks restart behavior; it does not simulate power loss. Linux TUI integration tests use pseudoterminals to exercise the executable's real input and exit paths.
 
 ## License
 
