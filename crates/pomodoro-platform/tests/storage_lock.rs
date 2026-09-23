@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pomodoro_platform::{NativeStorage, StorageLocation, StorageLockError};
+use pomodoro_platform::{StorageLocation, StorageLockError};
 
 const MODE: &str = "POMODORO_LOCK_TEST_MODE";
 const DIRECTORY: &str = "POMODORO_LOCK_TEST_DIRECTORY";
@@ -62,7 +62,7 @@ fn lock_probe() {
             );
             assert_eq!(
                 discovered.state_path(),
-                NativeStorage::discover().unwrap().state_path()
+                location.directory().join("pomodoro-app-rs/state.json")
             );
             println!("{MESSAGE}DISCOVERED");
             None
@@ -276,7 +276,7 @@ fn creates_only_the_directory_and_private_lock_file() {
 }
 
 #[test]
-fn discovery_matches_legacy_path_without_creating_files() {
+fn discovery_uses_xdg_state_path_without_creating_files() {
     let directory = tempfile::tempdir().unwrap();
     let probe = Probe::spawn("discover", directory.path());
     probe.expect("DISCOVERED");

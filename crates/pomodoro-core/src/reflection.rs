@@ -66,7 +66,58 @@ impl ReflectionSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SessionEnd, SessionId, Timestamp};
+    use crate::{
+        Command, DomainState, Observation, ProgressState, SessionEnd, SessionId, TimerConfig,
+        Timestamp,
+    };
+
+    #[test]
+    fn completed_focuses_accumulate_while_breaks_and_skips_do_not() {
+        let mut domain = DomainState::new(TimerConfig::new(1, 1, 1, 4).unwrap()).unwrap();
+        for (kind, started_at) in [
+            (SessionKind::Focus, 0),
+            (SessionKind::ShortBreak, 1_000),
+            (SessionKind::Focus, 2_000),
+        ] {
+            domain
+                .apply(Command::Start(kind), Timestamp(started_at))
+                .unwrap();
+            domain
+                .observe(Observation {
+                    previous_at: Timestamp(started_at),
+                    at: Timestamp(started_at + 1_000),
+                    monotonic_elapsed_ms: Some(1_000),
+                })
+                .unwrap();
+        }
+        domain.apply(Command::SkipReady, Timestamp(3_000)).unwrap();
+        domain
+            .apply(Command::Start(SessionKind::Focus), Timestamp(3_000))
+            .unwrap();
+        let ProgressState::Active { session, .. } = &domain.snapshot().state else {
+            panic!("expected active focus");
+        };
+        domain
+            .apply(
+                Command::End {
+                    session_id: session.id,
+                    outcome: SessionOutcome::Skipped,
+                },
+                Timestamp(3_000),
+            )
+            .unwrap();
+
+        assert_eq!(domain.history().sessions.len(), 4);
+        assert_eq!(
+            domain.history().reflection().unwrap(),
+            ReflectionSummary {
+                work_ms: 2_000,
+                completed_focus_sessions: 2,
+                distractions: 0,
+                returns: 0,
+            }
+        );
+    }
 
     #[test]
     fn including_a_session_checks_both_overflows_without_changing_the_summary() {

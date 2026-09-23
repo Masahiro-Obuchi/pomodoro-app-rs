@@ -2,7 +2,6 @@
 
 mod config;
 mod domain;
-pub mod legacy;
 mod model;
 mod observation;
 mod reflection;

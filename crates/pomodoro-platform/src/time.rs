@@ -4,7 +4,6 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use chrono::{DateTime, Local, Utc};
 use pomodoro_core::{Observation, Timestamp};
 
 /// Runtime-only clock evidence. Construct a fresh clock on application startup;
@@ -112,27 +111,6 @@ fn timestamp_at(wall: SystemTime) -> Result<Timestamp, TimeError> {
     u64::try_from(millis)
         .map(Timestamp)
         .map_err(|_| TimeError::OutOfRange)
-}
-
-/// Returns the current Unix timestamp in milliseconds.
-///
-/// # Errors
-///
-/// Returns [`TimeError`] if the system clock is before the Unix epoch or the timestamp
-/// does not fit in a `u64`.
-pub fn unix_time_millis() -> Result<u64, TimeError> {
-    timestamp_at(SystemTime::now()).map(|at| at.0)
-}
-
-/// Converts a Unix timestamp to the environment's local date in `YYYY-MM-DD` format.
-///
-/// # Errors
-///
-/// Returns [`TimeError::OutOfRange`] if `chrono` cannot represent the timestamp.
-pub fn local_date_at(timestamp_ms: u64) -> Result<String, TimeError> {
-    let timestamp = i64::try_from(timestamp_ms).map_err(|_| TimeError::OutOfRange)?;
-    let utc = DateTime::<Utc>::from_timestamp_millis(timestamp).ok_or(TimeError::OutOfRange)?;
-    Ok(utc.with_timezone(&Local).format("%Y-%m-%d").to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

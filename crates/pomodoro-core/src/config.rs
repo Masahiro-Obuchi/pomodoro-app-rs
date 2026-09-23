@@ -1,13 +1,11 @@
 use std::{error::Error, fmt};
 
-use serde::{Deserialize, Serialize};
-
 use crate::SessionKind;
 
 const MAX_SESSION_SECONDS: u64 = 24 * 60 * 60;
 
 /// Session durations and the number of focus sessions before a long break.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimerConfig {
     focus_seconds: u64,
     short_break_seconds: u64,
@@ -38,7 +36,7 @@ impl TimerConfig {
         Ok(config)
     }
 
-    /// Validates the values, including configurations produced by deserialization.
+    /// Validates the values of a configuration.
     ///
     /// # Errors
     ///

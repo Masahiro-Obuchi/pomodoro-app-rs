@@ -154,7 +154,7 @@ fn settings_reject_missing_unknown_duplicate_and_nonobject_fields() {
 }
 
 #[test]
-fn settings_validate_ranges_on_read_and_domain_conversion() {
+fn settings_validate_ranges_on_read() {
     let defaults: serde_json::Value = serde_json::from_str(DEFAULT_SETTINGS).unwrap();
     for field in ["focus_seconds", "short_break_seconds", "long_break_seconds"] {
         for invalid in [0, 86_401, u64::MAX] {
@@ -162,10 +162,6 @@ fn settings_validate_ranges_on_read_and_domain_conversion() {
             value[field] = invalid.into();
             let json = value.to_string();
             reject_json::<SettingsV1>(&[&json]);
-            // Legacy TimerConfig deserialization can bypass its constructor.
-            let config: TimerConfig = serde_json::from_str(&json).unwrap();
-            assert!(SettingsV1::try_from(config).is_err());
-            assert!(serde_json::to_string(&SettingsV1(config)).is_err());
         }
     }
     for invalid in [0, u64::from(u32::MAX) + 1] {
