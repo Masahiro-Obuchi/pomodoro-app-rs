@@ -4,8 +4,8 @@ use std::{cell::RefCell, fmt::Write as _};
 
 use crossterm::event::KeyCode;
 use pomodoro_core::{
-    Command, DomainError, DomainState, InterruptionKind, ProgressState, QuickStartChoice,
-    ReflectionSummary, SessionKind, SessionOutcome, TimerState,
+    Command, DomainError, DomainState, ProgressState, ReflectionSummary, SessionKind,
+    SessionOutcome,
 };
 
 use crate::controller::{
@@ -13,7 +13,9 @@ use crate::controller::{
 };
 pub use crate::settings::{SettingsDraft, SettingsField};
 
+mod actions;
 mod reflection;
+use actions::{NormalAction, NormalControls};
 use reflection::HistoryReflection;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -24,7 +26,7 @@ enum UnsavedExit {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum InputContext {
+pub(crate) enum InputContext {
     Closed,
     ConfirmUnsavedExit,
     SaveBlocked,
@@ -138,7 +140,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
 
     // Derive the input priority from the current application and controller state.
     // Phase 3 can add task editing without another early-return path in handle_key.
-    fn input_context(&self) -> InputContext {
+    pub(crate) fn input_context(&self) -> InputContext {
         if self.should_quit() {
             InputContext::Closed
         } else if self.confirming_unsaved_exit() {
@@ -174,71 +176,27 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     }
 
     fn handle_normal_key(&mut self, key: KeyCode) {
-        match key {
-            KeyCode::Char('?') => self.show_help = !self.show_help,
-            KeyCode::Char('q') => match self.controller.shutdown() {
+        let action = NormalControls::for_snapshot(self.state().snapshot()).action_for_key(key);
+        match action {
+            Some(NormalAction::ToggleHelp) => self.show_help = !self.show_help,
+            Some(NormalAction::Shutdown) => match self.controller.shutdown() {
                 Ok(commit) => self.on_commit(commit),
                 Err(error) => {
                     self.shutdown_failed = true;
                     self.on_error(&error);
                 }
             },
-            KeyCode::Char('s') => self.open_settings(),
-            _ => {
-                if let Some(command) = self.command_for_key(key) {
-                    match self.controller.execute(command) {
-                        Ok(commit) => self.on_commit(commit),
-                        Err(error) => self.on_error(&error),
-                    }
-                }
-            }
+            Some(NormalAction::RequestSettings) => self.open_settings(),
+            Some(NormalAction::Command(command)) => match self.controller.execute(command) {
+                Ok(commit) => self.on_commit(commit),
+                Err(error) => self.on_error(&error),
+            },
+            None => {}
         }
     }
 
-    // Resolve against the state the user sees, before execute observes time.
-    // Controller discards this command if that observation completes the session.
-    fn command_for_key(&self, key: KeyCode) -> Option<Command> {
-        match (&self.state().snapshot().state, key) {
-            (ProgressState::Ready { next_kind, .. }, KeyCode::Char(' ')) => {
-                Some(Command::Start(*next_kind))
-            }
-            (ProgressState::Ready { .. }, KeyCode::Char('r')) => Some(Command::ResetReady),
-            (ProgressState::Ready { .. }, KeyCode::Char('n')) => Some(Command::SkipReady),
-            (ProgressState::Active { session, timer }, KeyCode::Char(' ')) => Some(match timer {
-                TimerState::Running { .. } => Command::Pause(session.id),
-                TimerState::Interrupted { interruption }
-                    if interruption.kind == InterruptionKind::Distraction =>
-                {
-                    Command::Return(session.id)
-                }
-                TimerState::Interrupted { .. } => Command::Resume(session.id),
-            }),
-            (ProgressState::Active { session, .. }, KeyCode::Char(key @ ('r' | 'n'))) => {
-                Some(Command::End {
-                    session_id: session.id,
-                    outcome: if key == 'r' {
-                        SessionOutcome::Reset
-                    } else {
-                        SessionOutcome::Skipped
-                    },
-                })
-            }
-            (
-                ProgressState::AwaitingQuickStartDecision {
-                    quick_start_session_id,
-                    ..
-                },
-                KeyCode::Char(key @ ('c' | 'f')),
-            ) => Some(Command::DecideQuickStart {
-                session_id: *quick_start_session_id,
-                choice: if key == 'c' {
-                    QuickStartChoice::Continue
-                } else {
-                    QuickStartChoice::Finish
-                },
-            }),
-            _ => None,
-        }
+    pub(crate) fn normal_hint_lines(&self) -> [String; 2] {
+        NormalControls::for_snapshot(self.state().snapshot()).hint_lines()
     }
 
     fn open_settings(&mut self) {

@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::App,
+    app::{App, InputContext},
     controller::{Clock, CompletionNotifier, SaveStore},
     startup_gate::StartupGate,
     ui_settings::{centered, draw_settings},
@@ -115,43 +115,34 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
     app: &App<S, C, N>,
 ) -> Vec<Line<'_>> {
     let mut footer = vec![];
-    if app.confirming_unsaved_exit() {
-        footer.push(Line::from(
-            "保存を確認できていない変更があります。未保存のまま終了しますか？",
-        ));
-        footer.push(Line::from("y: 未保存で終了   n / Esc: 戻る"));
-    } else if app.pending_state().is_some() || app.shutdown_failed() {
-        if let Some(pending) = app.pending_state() {
-            let (kind, status, ..) = timer_view(pending.snapshot());
-            footer.push(Line::from(format!(
-                "未確定の保存候補: {} · {status}",
-                session_label(kind)
-            )));
-        }
-        footer.push(Line::from("計時と通常操作を保留しています。"));
-        footer.push(Line::from("r: 保存を再試行   Q: 未保存終了の確認"));
-    } else {
-        footer.push(Line::from(match &app.state().snapshot().state {
-            ProgressState::AwaitingQuickStartDecision { .. } => {
-                "f: Quick Startを終了   c: Focusへ継続   q: 保存して終了"
-            }
-            ProgressState::Active {
-                timer: TimerState::Interrupted { interruption },
-                ..
-            } if interruption.kind == InterruptionKind::Distraction => {
-                "Space: 作業に戻る（Return）   r: リセット   n: スキップ"
-            }
-            ProgressState::Active {
-                timer: TimerState::Interrupted { .. },
-                ..
-            } => "Space: 再開   r: リセット   n: スキップ",
-            _ => "Space: 開始/一時停止   r: リセット   n: スキップ",
-        }));
-        footer.push(Line::from("s: 設定   ?: ヘルプ   q: 保存して終了"));
-        if app.show_help() {
+    match app.input_context() {
+        InputContext::Closed | InputContext::Settings => {}
+        InputContext::ConfirmUnsavedExit => {
             footer.push(Line::from(
-                "設定は待機中のみ変更できます。中断中の時間は加算しません。",
+                "保存を確認できていない変更があります。未保存のまま終了しますか？",
             ));
+            footer.push(Line::from("y: 未保存で終了   n / Esc: 戻る"));
+        }
+        InputContext::SaveBlocked => {
+            if let Some(pending) = app.pending_state() {
+                let (kind, status, ..) = timer_view(pending.snapshot());
+                footer.push(Line::from(format!(
+                    "未確定の保存候補: {} · {status}",
+                    session_label(kind)
+                )));
+            }
+            footer.push(Line::from("計時と通常操作を保留しています。"));
+            footer.push(Line::from("r: 保存を再試行   Q: 未保存終了の確認"));
+        }
+        InputContext::Normal => {
+            let [session, common] = app.normal_hint_lines();
+            footer.push(Line::from(session));
+            footer.push(Line::from(common));
+            if app.show_help() {
+                footer.push(Line::from(
+                    "設定は待機中のみ変更できます。中断中の時間は加算しません。",
+                ));
+            }
         }
     }
     if !app.message().is_empty() {
