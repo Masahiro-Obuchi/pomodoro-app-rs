@@ -90,21 +90,28 @@ impl Tui {
     }
 
     fn expect(&mut self, text: &str) {
+        self.expect_all(&[text]);
+    }
+
+    fn expect_all(&mut self, texts: &[&str]) {
         let deadline = Instant::now() + TIMEOUT;
-        let expected: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+        let expected: Vec<String> = texts
+            .iter()
+            .map(|text| text.chars().filter(|ch| !ch.is_whitespace()).collect())
+            .collect();
         loop {
             // Ratatui may position spaces with cursor commands rather than
             // emitting them. Compare the visible words without whitespace.
             let emitted = without_csi(&self.received);
             let compact: String = emitted.chars().filter(|ch| !ch.is_whitespace()).collect();
-            if compact.contains(&expected) {
+            if expected.iter().all(|text| compact.contains(text)) {
                 self.received.clear();
                 return;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.output.recv_timeout(remaining) {
                 Ok(bytes) => self.received.extend(bytes),
-                Err(error) => panic!("waiting for {text:?}: {error}; output: {emitted}"),
+                Err(error) => panic!("waiting for {texts:?}: {error}; output: {emitted}"),
             }
         }
     }
@@ -174,7 +181,7 @@ fn executable_opens_history_without_saving_and_returns_to_controls() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("h: History");
+    tui.expect_all(&["Focus · Ready", "Round 0/4", "h: History"]);
     let before = fs::read(location.state_path()).unwrap();
     tui.send(b"h");
     tui.expect("Recorded work: 0:00:00");
@@ -184,6 +191,43 @@ fn executable_opens_history_without_saving_and_returns_to_controls() {
     tui.send(b"\x1b");
     tui.expect("Space: Start");
     tui.send(b"q");
+    assert!(tui.finish().success());
+    let store = loaded(&location);
+    let domain = store.saved_state().unwrap().domain();
+    assert_eq!(domain.snapshot().settings, TimerConfig::default());
+    assert!(matches!(
+        domain.snapshot().state,
+        ProgressState::Ready {
+            next_kind: SessionKind::Focus,
+            current_task_draft: None,
+        }
+    ));
+    assert_eq!(
+        domain.snapshot().round_progress.completed_focuses_in_round,
+        0
+    );
+    assert!(domain.history().sessions.is_empty());
+    assert!(domain.history().events.is_empty());
+    let summary = domain.reflection().unwrap();
+    assert_eq!(summary.work_ms, 0);
+    assert_eq!(summary.completed_focus_sessions, 0);
+    assert_eq!(summary.distractions, 0);
+    assert_eq!(summary.returns, 0);
+}
+
+#[test]
+fn executable_first_launch_shows_four_zero_reflection_metrics() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut tui = Tui::spawn_sized(dir.path(), 30, 12);
+    tui.expect("Focus");
+    tui.send(b"h");
+    tui.expect_all(&[
+        "Recorded work: 0:00:00",
+        "Focus completed: 0",
+        "Distractions: 0",
+        "Returns: 0",
+    ]);
+    tui.send(b"hq");
     assert!(tui.finish().success());
 }
 
@@ -370,6 +414,10 @@ fn executable_reports_distraction_and_returns_after_restart() {
 
         let mut tui = Tui::spawn(dir.path());
         tui.expect("Awaiting Return");
+        tui.send(b"h");
+        tui.expect("Returns: 0");
+        tui.send(b"h");
+        tui.expect("Awaiting Return");
         tui.send(b" ");
         tui.expect("Returned to work and saved");
         tui.send(b"q");
@@ -416,6 +464,14 @@ fn executable_reports_distraction_and_returns_after_restart() {
             })
             .count();
         assert_eq!((started, returned), (1, 1));
+        drop(store);
+
+        let mut tui = Tui::spawn_sized(dir.path(), 30, 12);
+        tui.expect("h: History");
+        tui.send(b"h");
+        tui.expect_all(&["Distractions: 1", "Returns: 1"]);
+        tui.send(b"hq");
+        assert!(tui.finish().success());
     }
 }
 
@@ -753,13 +809,35 @@ fn executable_keeps_quick_start_choice_across_restarts_until_finish_or_continue(
         seed_awaiting_quick_start(&location);
         let mut tui = Tui::spawn(dir.path());
         tui.expect("Choose finish or continue");
+        tui.send(b"h");
+        tui.expect("Recorded work: 0:02:00");
+        tui.send(b"h");
+        tui.expect("Choose finish or continue");
         tui.send(b"q");
         assert!(tui.finish().success());
         let store = loaded(&location);
+        let before_choice = store.saved_state().unwrap().domain();
         assert!(matches!(
-            store.saved_state().unwrap().domain().snapshot().state,
+            before_choice.snapshot().state,
             ProgressState::AwaitingQuickStartDecision { .. }
         ));
+        assert_eq!(before_choice.history().sessions.len(), 1);
+        assert_eq!(
+            before_choice.history().sessions[0].kind,
+            SessionKind::QuickStart
+        );
+        assert!(
+            !before_choice
+                .history()
+                .events
+                .iter()
+                .any(|event| matches!(event.payload, EventKind::QuickStartDecisionMade { .. }))
+        );
+        assert_eq!(before_choice.reflection().unwrap().work_ms, 120_000);
+        assert_eq!(
+            before_choice.reflection().unwrap().completed_focus_sessions,
+            0
+        );
         drop(store);
 
         let mut tui = Tui::spawn(dir.path());
@@ -873,72 +951,88 @@ fn executable_saves_restarts_and_rejects_second_launch() {
 
 #[test]
 fn executable_restores_old_running_session_without_crediting_downtime() {
-    let dir = tempfile::tempdir().unwrap();
-    let location = location(dir.path());
-    let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
-        panic!("expected new store");
-    };
-    let mut domain = DomainState::new(TimerConfig::default()).unwrap();
-    domain
-        .apply(DomainCommand::Start(SessionKind::Focus), Timestamp(1_000))
-        .unwrap();
-    domain
-        .observe(Observation {
-            previous_at: Timestamp(1_000),
-            at: Timestamp(1_500),
-            monotonic_elapsed_ms: Some(500),
-        })
-        .unwrap();
-    store.save(&domain, Timestamp(1_500)).unwrap();
-    drop(store);
-
-    // The executable's real startup clock is decades later than this saved run.
-    let mut tui = Tui::spawn(dir.path());
-    tui.expect("Timing gap · Awaiting Resume");
-    tui.send(b"q");
-    assert!(tui.finish().success());
-
-    let store = loaded(&location);
-    let domain = store.saved_state().unwrap().domain();
-    let ProgressState::Active {
-        session,
-        timer: TimerState::Interrupted { interruption },
-    } = &domain.snapshot().state
-    else {
-        panic!("restart must interrupt the running session");
-    };
-    assert_eq!(session.kind, SessionKind::Focus);
-    assert_eq!(session.elapsed_ms, 500);
-    assert_eq!(interruption.kind, InterruptionKind::ObservationGap);
-    assert_eq!(interruption.started_at, Timestamp(1_500));
-    assert_eq!(
+    for (kind, expected_work) in [
+        (SessionKind::Focus, "Recorded work: 0:00:01"),
+        (SessionKind::ShortBreak, "Recorded work: 0:00:00"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let location = location(dir.path());
+        let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
+            panic!("expected new store");
+        };
+        let mut domain = DomainState::new(TimerConfig::default()).unwrap();
+        if kind == SessionKind::ShortBreak {
+            domain
+                .apply(DomainCommand::SkipReady, Timestamp(1_000))
+                .unwrap();
+        }
         domain
-            .history()
-            .events
-            .iter()
-            .filter_map(|event| match event.payload {
-                EventKind::RunIntervalRecorded { credited_ms, .. } => Some(credited_ms),
-                _ => None,
+            .apply(DomainCommand::Start(kind), Timestamp(1_000))
+            .unwrap();
+        domain
+            .observe(Observation {
+                previous_at: Timestamp(1_000),
+                at: Timestamp(2_500),
+                monotonic_elapsed_ms: Some(1_500),
             })
-            .sum::<u64>(),
-        500
-    );
-    assert_eq!(
-        domain
-            .history()
-            .events
-            .iter()
-            .filter(|event| matches!(
-                event.payload,
-                EventKind::ObservationGapDetected {
-                    last_confirmed_at: Timestamp(1_500),
-                    reason: GapReason::Restart,
-                    ..
-                }
-            ))
-            .count(),
-        1
-    );
+            .unwrap();
+        store.save(&domain, Timestamp(2_500)).unwrap();
+        drop(store);
+
+        // The executable's real startup clock is decades later than this saved run.
+        let mut tui = Tui::spawn(dir.path());
+        tui.expect("Timing gap · Awaiting Resume");
+        tui.send(b"h");
+        tui.expect(expected_work);
+        tui.send(b"hq");
+        assert!(tui.finish().success());
+
+        let store = loaded(&location);
+        let domain = store.saved_state().unwrap().domain();
+        let ProgressState::Active {
+            session,
+            timer: TimerState::Interrupted { interruption },
+        } = &domain.snapshot().state
+        else {
+            panic!("restart must interrupt the running session");
+        };
+        assert_eq!(session.kind, kind);
+        assert_eq!(session.elapsed_ms, 1_500);
+        assert_eq!(interruption.kind, InterruptionKind::ObservationGap);
+        assert_eq!(interruption.started_at, Timestamp(2_500));
+        assert_eq!(
+            domain.reflection().unwrap().work_ms,
+            if kind.is_work() { 1_500 } else { 0 }
+        );
+        assert_eq!(
+            domain
+                .history()
+                .events
+                .iter()
+                .filter_map(|event| match event.payload {
+                    EventKind::RunIntervalRecorded { credited_ms, .. } => Some(credited_ms),
+                    _ => None,
+                })
+                .sum::<u64>(),
+            1_500
+        );
+        assert_eq!(
+            domain
+                .history()
+                .events
+                .iter()
+                .filter(|event| matches!(
+                    event.payload,
+                    EventKind::ObservationGapDetected {
+                        last_confirmed_at: Timestamp(2_500),
+                        reason: GapReason::Restart,
+                        ..
+                    }
+                ))
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]

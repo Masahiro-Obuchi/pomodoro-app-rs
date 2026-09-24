@@ -7,13 +7,22 @@ const VALID: &[u8] =
 
 #[test]
 fn unsupported_or_broken_load_exits_before_terminal_setup_without_overwriting() {
-    for (original, backup) in [
+    for (original, backup, reason) in [
         (
             b"{ broken saved data, must remain unchanged".as_slice(),
             false,
+            "invalid saved state",
         ),
-        (br#"{"legacy":true}"#, true),
-        (br#"{"schema_version":999}"#, true),
+        (
+            br#"{"legacy":true}"#,
+            true,
+            "unversioned saved state is unsupported",
+        ),
+        (
+            br#"{"schema_version":999}"#,
+            true,
+            "unsupported schema version 999",
+        ),
     ] {
         let directory = tempfile::tempdir().unwrap();
         let state_directory = directory.path().join("pomodoro-app-rs");
@@ -32,7 +41,9 @@ fn unsupported_or_broken_load_exits_before_terminal_setup_without_overwriting() 
             .unwrap();
 
         assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("startup load failed"));
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(error.contains("startup load failed"), "{error}");
+        assert!(error.contains(reason), "{error}");
         assert!(output.stdout.is_empty());
         assert_eq!(fs::read(&path).unwrap(), original);
         if backup {
