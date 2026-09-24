@@ -15,6 +15,7 @@ use crate::{
     app::{App, InputContext},
     controller::{Clock, CompletionNotifier, SaveStore},
     startup_gate::StartupGate,
+    ui_history::{draw_history, format_work_time},
     ui_settings::{centered, draw_settings},
     ui_task::draw_task,
 };
@@ -53,6 +54,10 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     frame: &mut Frame<'_>,
     app: &App<S, C, N>,
 ) {
+    if app.input_context() == InputContext::History {
+        draw_history(frame, app);
+        return;
+    }
     let area = centered(frame.area(), 82, 25);
     let compact_sections = Layout::vertical([
         Constraint::Length(3),
@@ -121,9 +126,9 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
         );
         let history = match app.reflection() {
             Ok(summary) => format!(
-                "Total: Focus completed {} / Work {} min\nDistractions {} / Returns {}   Round {}/{}",
+                "Total: Focus completed {} / Work {}\nDistractions {} / Returns {}   Round {}/{}",
                 summary.completed_focus_sessions,
-                summary.work_ms / 60_000,
+                format_work_time(summary.work_ms),
                 summary.distractions,
                 summary.returns,
                 snapshot.round_progress.completed_focuses_in_round,
@@ -187,7 +192,10 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
 ) -> Vec<Line<'_>> {
     let mut footer = vec![];
     match app.input_context() {
-        InputContext::Closed | InputContext::Settings | InputContext::Task => {}
+        InputContext::Closed
+        | InputContext::Settings
+        | InputContext::Task
+        | InputContext::History => {}
         InputContext::ConfirmUnsavedExit => {
             footer.push(Line::from(
                 "Some changes are not saved. Exit without saving?",

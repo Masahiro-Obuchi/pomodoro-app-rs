@@ -33,6 +33,7 @@ pub(crate) enum InputContext {
     SaveBlocked,
     Task,
     Settings,
+    History,
     Normal,
 }
 
@@ -42,6 +43,7 @@ pub struct App<S, C, N> {
     show_help: bool,
     settings: Option<SettingsDraft>,
     task_edit: Option<String>,
+    history_open: bool,
     message: String,
     unsaved_exit: UnsavedExit,
     shutdown_failed: bool,
@@ -56,6 +58,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             show_help: false,
             settings: None,
             task_edit: None,
+            history_open: false,
             message: String::new(),
             unsaved_exit: UnsavedExit::None,
             shutdown_failed: false,
@@ -99,6 +102,11 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     #[must_use]
     pub fn task_edit(&self) -> Option<&str> {
         self.task_edit.as_deref()
+    }
+
+    #[must_use]
+    pub const fn history_open(&self) -> bool {
+        self.history_open
     }
 
     #[must_use]
@@ -159,6 +167,11 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             InputContext::SaveBlocked => self.handle_save_blocked_key(key),
             InputContext::Task => self.handle_task_key(event),
             InputContext::Settings => self.handle_settings_key(key),
+            InputContext::History => {
+                if matches!(key, KeyCode::Esc | KeyCode::Char('h')) {
+                    self.history_open = false;
+                }
+            }
             InputContext::Normal => self.handle_normal_key(key),
         }
     }
@@ -175,6 +188,8 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             InputContext::Task
         } else if self.settings.is_some() {
             InputContext::Settings
+        } else if self.history_open {
+            InputContext::History
         } else {
             InputContext::Normal
         }
@@ -204,6 +219,10 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     fn handle_normal_key(&mut self, key: KeyCode) {
         let action = NormalControls::for_snapshot(self.state().snapshot()).action_for_key(key);
         match action {
+            Some(NormalAction::OpenHistory) => {
+                self.history_open = true;
+                self.show_help = false;
+            }
             Some(NormalAction::ToggleHelp) => self.show_help = !self.show_help,
             Some(NormalAction::Shutdown) => match self.controller.shutdown() {
                 Ok(commit) => self.on_commit(commit),

@@ -66,12 +66,15 @@ cargo run -p pomodoro-tui
 | `n` | Skip to the next scheduled session |
 | `x` | Cancel an active session and return to Focus start |
 | `s` | Open settings while Ready (waiting to start) |
+| `h` | Open the History view during normal operation; `h` or `Esc` returns |
 | `?` | Toggle help |
 | `q` | Save and quit |
 
 At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. During a running Focus or Quick Start, `d` records a distraction and stops work time. `Space` records Return and resumes the remaining work time, including after an exit and restart. While any session is running or interrupted, `x` ends that attempt and returns to Focus start. Credited work time remains in history; cancelling a distraction does not record a Return. Breaks and following sessions always wait for manual start.
 
-On short or narrow terminals, the timer hides the progress gauge and cumulative summary when their space is needed for operation and save recovery controls. If the recovery keys still cannot fit, it asks you to enlarge the terminal. Enlarge the terminal to see the gauge and summary again.
+The History view shows recorded work time from Focus and Quick Start, naturally completed Focus sessions, reported distractions, and explicit Returns across all records, including the current session. Work time uses `H:MM:SS`; subsecond time is truncated only for display. Opening History does not pause the timer or save state. If a save fails while it is open, the recovery controls take priority.
+
+On short or narrow terminals, the timer hides the progress gauge and cumulative summary when their space is needed for operation and save recovery controls. Press `h` to view the totals when the summary is hidden. If the recovery keys or History view cannot fit, the screen asks you to enlarge the terminal. Enlarge the terminal to see the gauge and summary again.
 
 In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 

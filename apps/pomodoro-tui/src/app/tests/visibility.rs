@@ -63,6 +63,28 @@ fn narrow_screen_shows_state_specific_controls_and_save_failure_choices() {
 }
 
 #[test]
+fn narrow_history_view_shows_metrics_or_a_resize_hint_with_back_key() {
+    let mut h = harness(ready(), 0);
+    let ready = render(&h.app, 24, 17);
+    assert!(has(&ready, "h: History"), "{ready}");
+    press(&mut h.app, 'h');
+    let history = render(&h.app, 24, 9);
+    for phrase in [
+        "Recorded work: 0:00:00",
+        "Focus completed: 0",
+        "Distractions: 0",
+        "Returns: 0",
+        "h/Esc: Back",
+    ] {
+        assert!(has(&history, phrase), "missing {phrase}: {history}");
+    }
+    let too_small = render(&h.app, 24, 6);
+    for phrase in ["h/Esc: Back", "Enlarge terminal to view history"] {
+        assert!(has(&too_small, phrase), "missing {phrase}: {too_small}");
+    }
+}
+
+#[test]
 fn narrow_quick_start_decision_shows_choices_and_completion() {
     let mut h = harness(ready(), 0);
     press(&mut h.app, '2');

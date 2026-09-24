@@ -147,7 +147,7 @@ fn reflection_shows_distractions_and_returns_including_the_active_session() {
     for label in [
         "Total:",
         "Focus completed 0",
-        "Work 0 min",
+        "Work 0:00:00",
         "Distractions 2",
         "Returns 1",
         "Round",
