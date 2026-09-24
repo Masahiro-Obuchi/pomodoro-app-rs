@@ -144,7 +144,10 @@ fn storage_ancestry_is_synced_deepest_first_once_per_handle() {
         })
         .unwrap();
     assert_eq!(synced.first().unwrap(), location.directory());
-    assert_eq!(synced.last().unwrap(), Path::new("/"));
+    assert_eq!(
+        synced.last().unwrap(),
+        location.directory().ancestors().last().unwrap()
+    );
     assert!(synced.contains(&directory.path().to_owned()));
     for pair in synced.windows(2) {
         assert_eq!(pair[0].parent(), Some(pair[1].as_path()));
@@ -235,12 +238,13 @@ fn ancestor_sync_failure_preserves_loaded_primary_and_backup_across_reopens() {
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), OLD_BACKUP).unwrap();
+    let root = location.directory().ancestors().last().unwrap();
     for _ in 0..2 {
         let mut store = load(&location);
         let error = store
             .save_with_hook(&domain(), Timestamp(2_000), &mut |stage, path| {
                 assert_eq!(stage, SaveStage::SyncStorageAncestry);
-                if path == Path::new("/") {
+                if path == root {
                     Err(io::Error::other("injected final-ancestor sync failure"))
                 } else {
                     Ok(())

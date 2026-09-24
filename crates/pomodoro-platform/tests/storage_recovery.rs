@@ -1,14 +1,18 @@
-#![cfg(any(target_os = "linux", target_os = "macos"))]
+#![cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 
 mod support;
 
-use std::{fs, os::unix::fs::PermissionsExt};
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use pomodoro_core::{
     Command, CurrentTask, DomainState, Observation, ProgressState, SessionId, SessionKind,
     TimerConfig, Timestamp,
 };
-use pomodoro_platform::{LoadOutcome, SaveError, SaveStage, StorageLocation, StorageLockError};
+use pomodoro_platform::{LoadOutcome, StorageLocation, StorageLockError};
+#[cfg(unix)]
+use pomodoro_platform::{SaveError, SaveStage};
 
 const BROKEN: &[u8] = b"{ damaged primary, retained verbatim";
 
@@ -124,6 +128,7 @@ fn recovery_restores_saved_states_and_returns_to_normal_saves_under_the_same_loc
             if let Some(bytes) = original {
                 let archive = recovery.quarantine_path().unwrap();
                 assert_eq!(fs::read(archive).unwrap(), bytes);
+                #[cfg(unix)]
                 assert_eq!(
                     fs::metadata(archive).unwrap().permissions().mode() & 0o077,
                     0
@@ -170,6 +175,7 @@ fn cancelling_before_or_after_confirmation_changes_no_saved_files() {
 }
 
 #[test]
+#[cfg(unix)]
 fn real_quarantine_creation_failure_preserves_sources_and_can_retry() {
     let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());

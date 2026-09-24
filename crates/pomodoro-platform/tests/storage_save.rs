@@ -1,15 +1,16 @@
-#![cfg(any(target_os = "linux", target_os = "macos"))]
+#![cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 
 mod support;
 
-use std::{
-    fs,
-    os::unix::fs::{PermissionsExt, symlink},
-};
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::{PermissionsExt, symlink};
 
 use pomodoro_core::{Command, DomainState, SessionKind, TimerConfig, Timestamp};
+#[cfg(unix)]
+use pomodoro_platform::SaveStage;
 use pomodoro_platform::{
-    LoadOutcome, SaveError, SaveStage, StorageLocation, StorageLockError, WritableStorage,
+    LoadOutcome, SaveError, StorageLocation, StorageLockError, WritableStorage,
 };
 use serde_json::{Value, json};
 
@@ -55,6 +56,7 @@ fn first_and_consecutive_saves_preserve_domain_and_previous_exact_bytes() {
         Err(StorageLockError::InUse { .. })
     ));
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 3);
+    #[cfg(unix)]
     for path in [location.state_path(), location.backup_path()] {
         assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o077, 0);
     }
@@ -170,6 +172,7 @@ fn generation_overflow_and_invalid_timestamp_write_nothing() {
 }
 
 #[test]
+#[cfg(unix)]
 fn initial_retry_protects_a_backup_added_after_a_real_write_failure() {
     let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
@@ -209,6 +212,7 @@ fn initial_retry_protects_a_backup_added_after_a_real_write_failure() {
 }
 
 #[test]
+#[cfg(unix)]
 fn primary_symlink_is_not_followed_and_backup_rename_failure_retains_candidate() {
     let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
