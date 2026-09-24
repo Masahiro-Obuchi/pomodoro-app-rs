@@ -151,6 +151,7 @@ fn every_running_kind_restores_as_gap_without_crediting_downtime() {
         let dir = tempfile::tempdir().unwrap();
         let location = StorageLocation::at(dir.path().to_owned());
         let original = running(kind);
+        let expected_work_ms = original.reflection().unwrap().work_ms;
         seed(&location, &original);
         let startup = prepare(&location, 1_000_000);
         let store = startup.save().unwrap();
@@ -166,6 +167,7 @@ fn every_running_kind_restores_as_gap_without_crediting_downtime() {
         assert_eq!(session.elapsed_ms, 100);
         assert_eq!(interruption.kind, InterruptionKind::ObservationGap);
         assert_eq!(interruption.started_at, Timestamp(1_100));
+        assert_eq!(domain.reflection().unwrap().work_ms, expected_work_ms);
         assert_eq!(restored_count(domain), 1);
         let clock = TestClock {
             at: 1_000_000,
@@ -176,6 +178,10 @@ fn every_running_kind_restores_as_gap_without_crediting_downtime() {
             Controller::from_saved(store, clock, |_| panic!("restore is not completion")).unwrap();
         assert!(controller.tick().unwrap().is_none());
         assert_eq!(restored_count(controller.saved_state()), 1);
+        assert_eq!(
+            controller.state().reflection().unwrap().work_ms,
+            expected_work_ms
+        );
     }
 }
 
@@ -508,27 +514,54 @@ fn distraction_survives_saved_shutdown_reopen_and_explicit_return() {
     assert_eq!(session.elapsed_ms, 200);
     assert_eq!(interruption.kind, InterruptionKind::Distraction);
     assert_eq!(interruption.started_at, Timestamp(1_200));
+    let expected_interruption_id = interruption.id;
     let clock = TestClock {
         at: 1_000_000,
         times: [1_000_100, 1_000_200].into(),
         broken: false,
     };
     let mut controller = Controller::from_saved(store, clock, |_| Ok(())).unwrap();
+    let before_return = controller.saved_state();
+    assert_eq!(before_return.reflection().unwrap().work_ms, 200);
+    assert_eq!(before_return.reflection().unwrap().distractions, 1);
+    assert_eq!(before_return.reflection().unwrap().returns, 0);
+    assert_eq!(
+        before_return
+            .history()
+            .events
+            .iter()
+            .filter(|event| matches!(
+                event.payload,
+                EventKind::InterruptionStarted {
+                    interruption_id,
+                    interruption_kind: InterruptionKind::Distraction,
+                } if interruption_id == expected_interruption_id
+            ))
+            .count(),
+        1
+    );
     controller.execute(Command::Return(SessionId(1))).unwrap();
     assert_eq!(restored_count(controller.saved_state()), 1);
-    let end = controller
+    assert_eq!(controller.saved_state().reflection().unwrap().work_ms, 200);
+    assert_eq!(controller.saved_state().reflection().unwrap().returns, 1);
+    let (ended_id, end) = controller
         .saved_state()
         .history()
         .events
         .iter()
         .find_map(|event| {
-            if let EventKind::InterruptionEnded { end, .. } = &event.payload {
-                Some(end)
+            if let EventKind::InterruptionEnded {
+                interruption_id,
+                end,
+            } = &event.payload
+            {
+                Some((interruption_id, end))
             } else {
                 None
             }
         })
         .unwrap();
+    assert_eq!(*ended_id, expected_interruption_id);
     assert_eq!(end.outcome, pomodoro_core::InterruptionOutcome::Returned);
     assert_eq!(
         end.duration,
@@ -545,4 +578,5 @@ fn distraction_survives_saved_shutdown_reopen_and_explicit_return() {
         panic!("explicit Return resumes the session");
     };
     assert_eq!(session.elapsed_ms, 300);
+    assert_eq!(controller.state().reflection().unwrap().work_ms, 300);
 }
