@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::{cell::Cell, collections::VecDeque, fs, rc::Rc};
 
@@ -55,7 +57,7 @@ fn bootstrap(location: &StorageLocation) -> WritableStorage {
 
 #[test]
 fn real_save_failure_retries_the_operation_then_saves_gap_and_preserves_lock() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let store = bootstrap(&location);
     let original = fs::read(location.state_path()).unwrap();
@@ -126,7 +128,7 @@ fn real_save_failure_retries_the_operation_then_saves_gap_and_preserves_lock() {
 
 #[test]
 fn native_completion_is_present_on_disk_before_the_notification_callback() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let store = bootstrap(&location);
     let clock = ScriptedClock {
@@ -141,7 +143,7 @@ fn native_completion_is_present_on_disk_before_the_notification_callback() {
         notified.set(notified.get() + 1);
         // The callback cannot acquire the controller's lock. Copy the committed
         // bytes into an independent store to verify them through the public codec.
-        let copy = tempfile::tempdir().unwrap();
+        let copy = support::tempdir();
         let copy_location = StorageLocation::at(copy.path().to_owned());
         fs::write(
             copy_location.state_path(),

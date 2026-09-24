@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::{fs, process::Command};
 
@@ -24,7 +26,7 @@ fn unsupported_or_broken_load_exits_before_terminal_setup_without_overwriting() 
             "unsupported schema version 999",
         ),
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let state_directory = directory.path().join("pomodoro-app-rs");
         fs::create_dir_all(&state_directory).unwrap();
         let path = state_directory.join("state.json");

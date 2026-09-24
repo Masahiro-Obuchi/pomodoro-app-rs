@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::{cell::Cell, fs, path::Path, rc::Rc};
 
@@ -40,7 +42,7 @@ impl Clock for ScriptedClock {
 }
 
 fn decode_saved_bytes(path: &Path) -> DomainState {
-    let copy = tempfile::tempdir().unwrap();
+    let copy = support::tempdir();
     let location = StorageLocation::at(copy.path().to_owned());
     fs::write(location.state_path(), fs::read(path).unwrap()).unwrap();
     let LoadOutcome::Loaded(store) = location.lock().unwrap().load().unwrap() else {
@@ -222,7 +224,7 @@ fn assert_continued_focus_completed<
 #[test]
 fn quick_start_completion_and_choice_match_saved_file_and_notification() {
     for choice in ['f', 'c'] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
             panic!("new store expected")
@@ -313,7 +315,7 @@ fn quick_start_completion_and_choice_match_saved_file_and_notification() {
 
 #[test]
 fn cancelling_focus_keeps_work_but_not_a_completion_after_restart() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("new store expected")
