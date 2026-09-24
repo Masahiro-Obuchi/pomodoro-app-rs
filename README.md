@@ -37,6 +37,8 @@ The target format starts with fresh data and does not import existing settings, 
 
 The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, dependencies, completion criteria, and phase-level progress. Detailed behavior belongs in the specifications; implementation details and verification evidence belong in code, tests, and PRs. The original plan remains available in Git history.
 
+The [Phase 4 plan](docs/PHASE4_PLAN.md) covers the remaining reflection UI and MVP acceptance checks.
+
 The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md) and [Phase 3 plan](docs/archive/PHASE3_PLAN.md) are archived as records of the persistence cutover and TUI workflow. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
 
 ## Requirements
