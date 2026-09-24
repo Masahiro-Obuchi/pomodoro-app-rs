@@ -8,6 +8,7 @@ pub(super) enum NormalAction {
     Command(Command),
     RequestTask,
     RequestSettings,
+    OpenHistory,
     ToggleHelp,
     Shutdown,
 }
@@ -90,6 +91,7 @@ impl NormalControls {
         let settings_hint =
             matches!(snapshot.state, ProgressState::Ready { .. }).then_some("s: Settings");
         let common = vec![
+            Binding::new('h', Some("h: History"), NormalAction::OpenHistory),
             // Keep the existing explanation for s outside Ready, but do not
             // advertise settings as an available operation there.
             Binding::new('s', settings_hint, NormalAction::RequestSettings),

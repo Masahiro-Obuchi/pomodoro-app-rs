@@ -170,6 +170,24 @@ fn paste(tui: &mut Tui, text: &str) {
 }
 
 #[test]
+fn executable_opens_history_without_saving_and_returns_to_controls() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("h: History");
+    let before = fs::read(location.state_path()).unwrap();
+    tui.send(b"h");
+    tui.expect("Recorded work: 0:00:00");
+    assert_eq!(fs::read(location.state_path()).unwrap(), before);
+    tui.send(b"q");
+    assert!(tui.child.try_wait().unwrap().is_none());
+    tui.send(b"\x1b");
+    tui.expect("Space: Start");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+}
+
+#[test]
 fn executable_edits_task_without_saving_until_enter_and_restores_it() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
