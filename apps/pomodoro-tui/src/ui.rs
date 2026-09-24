@@ -5,7 +5,7 @@ use pomodoro_core::{
 };
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, Gauge, Paragraph, Wrap},
@@ -54,6 +54,17 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     app: &App<S, C, N>,
 ) {
     let area = centered(frame.area(), 82, 25);
+    let compact_sections = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(0),
+        Constraint::Length(0),
+        Constraint::Min(0),
+    ])
+    .split(area);
+    if draw_recovery_size_warning(frame, app, area, compact_sections[4]) {
+        return;
+    }
     let full_sections = Layout::vertical([
         Constraint::Length(3),
         Constraint::Length(3),
@@ -71,14 +82,7 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
         || full_footer_width == 0
         || needed_footer_rows > usize::from(full_footer_rows);
     let sections = if compact {
-        Layout::vertical([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(0),
-            Constraint::Length(0),
-            Constraint::Min(0),
-        ])
-        .split(area)
+        compact_sections
     } else {
         full_sections
     };
@@ -142,6 +146,39 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     if let Some(task) = app.task_edit() {
         draw_task(frame, task, app.message());
     }
+}
+
+fn draw_recovery_size_warning<S: SaveStore, C: Clock, N: CompletionNotifier>(
+    frame: &mut Frame<'_>,
+    app: &App<S, C, N>,
+    area: Rect,
+    footer_area: Rect,
+) -> bool {
+    let recovery_hint_count = match app.input_context() {
+        InputContext::SaveBlocked => usize::from(app.pending_state().is_some()) + 1,
+        InputContext::ConfirmUnsavedExit => 2,
+        _ => return false,
+    };
+    let footer_width = footer_area.width.saturating_sub(2);
+    let available_rows = footer_area.height.saturating_sub(2);
+    let required_rows = Paragraph::new(
+        footer_lines(app, true)
+            .into_iter()
+            .take(recovery_hint_count)
+            .collect::<Vec<_>>(),
+    )
+    .wrap(Wrap { trim: false })
+    .line_count(footer_width);
+    if footer_width > 0 && required_rows <= usize::from(available_rows) {
+        return false;
+    }
+    let prompt = if app.input_context() == InputContext::ConfirmUnsavedExit {
+        "Enlarge terminal to confirm unsaved exit."
+    } else {
+        "Enlarge terminal to show save recovery controls."
+    };
+    frame.render_widget(Paragraph::new(prompt).wrap(Wrap { trim: false }), area);
+    true
 }
 
 fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(

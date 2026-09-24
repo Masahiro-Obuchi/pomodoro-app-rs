@@ -116,6 +116,32 @@ fn tight_terminal_keeps_operation_and_save_recovery_controls_visible() {
 }
 
 #[test]
+fn terminal_too_small_for_recovery_keys_asks_to_enlarge() {
+    let mut h = harness(ready(), 0);
+    press(&mut h.app, '2');
+    h.at.set(100);
+    h.failures.set(1);
+    press(&mut h.app, 'd');
+
+    for height in [6, 9, 12] {
+        let blocked = render(&h.app, 24, height);
+        assert!(has(&blocked, "Enlarge terminal"), "{blocked}");
+        press(&mut h.app, 'Q');
+        let confirming = render(&h.app, 24, height);
+        assert!(
+            has(&confirming, "Enlarge terminal to confirm unsaved exit"),
+            "{confirming}"
+        );
+        press(&mut h.app, 'n');
+    }
+
+    let usable = render(&h.app, 24, 14);
+    for phrase in ["r: Retry save", "Q: Confirm unsaved exit"] {
+        assert!(has(&usable, phrase), "missing {phrase}: {usable}");
+    }
+}
+
+#[test]
 fn short_terminal_shows_quick_start_choices_and_help() {
     let mut h = harness(awaiting(), 120_000);
     press(&mut h.app, '?');

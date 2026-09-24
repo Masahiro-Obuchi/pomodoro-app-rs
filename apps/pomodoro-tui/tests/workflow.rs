@@ -143,7 +143,7 @@ fn quick_start_completion_and_choice_match_saved_file_and_notification() {
         let samples: std::collections::VecDeque<u64> = [0, 0]
             .into_iter()
             .chain((1_000..=120_000).step_by(1_000))
-            .chain([120_000, 120_000])
+            .chain([120_000, 120_000]) // The choice and shutdown each observe once.
             .collect();
         let controller = Controller::from_saved(
             store,
