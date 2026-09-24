@@ -5,6 +5,9 @@ on:
     paths:
       - .github/workflows/platform-probe.yml
       - crates/pomodoro-platform/**
+      - apps/pomodoro-tui/**
+      - Cargo.toml
+      - Cargo.lock
 
 jobs:
   probe:
@@ -19,5 +22,12 @@ jobs:
         run: rustup toolchain install 1.86.0 --profile minimal
       - name: Probe local filesystem
         run: cargo +1.86.0 test --locked -p pomodoro-platform --test platform_probe -- --nocapture
-      - name: Test platform crate
+      - name: Test platform crate on Windows
+        if: runner.os == 'Windows'
         run: cargo +1.86.0 test --locked -p pomodoro-platform
+      - name: Test workspace on Unix
+        if: runner.os != 'Windows'
+        run: cargo +1.86.0 test --locked --workspace
+      - name: Build workspace on Unix
+        if: runner.os != 'Windows'
+        run: cargo +1.86.0 build --locked --workspace
