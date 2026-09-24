@@ -17,7 +17,9 @@ use std::os::unix::fs::symlink;
 #[cfg(windows)]
 use std::os::windows::fs::{OpenOptionsExt, symlink_file};
 #[cfg(windows)]
-use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+};
 
 const LOCK_PATH: &str = "POMODORO_PROBE_LOCK_PATH";
 const MARKER: &str = "PLATFORM_PROBE:";
@@ -118,6 +120,21 @@ fn probe_storage_base_directories() {
     let base = directories::BaseDirs::new().unwrap();
     println!("{MARKER}state_dir={:?}", base.state_dir());
     println!("{MARKER}data_local_dir={:?}", base.data_local_dir());
+}
+
+#[cfg(windows)]
+#[test]
+fn probe_windows_directory_handle_sync() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, read, write) in [("read", true, false), ("write", false, true)] {
+        let result = OpenOptions::new()
+            .read(read)
+            .write(write)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(dir.path())
+            .and_then(|file| file.sync_all());
+        println!("{MARKER}backup_semantics_directory_sync_{name}={result:?}");
+    }
 }
 
 #[test]
