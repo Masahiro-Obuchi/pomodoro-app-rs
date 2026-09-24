@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::{collections::VecDeque, fs};
 
@@ -118,7 +120,7 @@ impl Clock for TestClock {
 
 #[test]
 fn new_startup_saves_before_controller_adoption_and_holds_the_lock_through_exit() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let startup = prepare(&location, 100);
     assert_eq!(startup.pending_state(), &ready());
@@ -148,7 +150,7 @@ fn every_running_kind_restores_as_gap_without_crediting_downtime() {
         SessionKind::ShortBreak,
         SessionKind::LongBreak,
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::tempdir();
         let location = StorageLocation::at(dir.path().to_owned());
         let original = running(kind);
         let expected_work_ms = original.reflection().unwrap().work_ms;
@@ -193,7 +195,7 @@ fn every_interruption_kind_survives_restore_with_the_same_interruption_id() {
         InterruptionKind::AppExit,
         InterruptionKind::ObservationGap,
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::tempdir();
         let location = StorageLocation::at(dir.path().to_owned());
         let mut original = running(SessionKind::Focus);
         match kind {
@@ -245,7 +247,7 @@ fn ready_draft_round_progress_and_quick_start_decision_are_preserved() {
         ProgressState::AwaitingQuickStartDecision { .. }
     ));
     for original in [draft, round, awaiting] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::tempdir();
         let location = StorageLocation::at(dir.path().to_owned());
         seed(&location, &original);
         let store = prepare(&location, 1_000_000).save().unwrap();
@@ -261,7 +263,7 @@ fn ready_draft_round_progress_and_quick_start_decision_are_preserved() {
 
 #[test]
 fn startup_save_failure_retries_one_restore_and_timestamp_with_no_input_permit() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     seed(&location, &running(SessionKind::Focus));
     let original = fs::read(location.state_path()).unwrap();
@@ -288,7 +290,7 @@ fn startup_save_failure_retries_one_restore_and_timestamp_with_no_input_permit()
 #[test]
 fn initial_save_failure_before_native_candidate_creation_can_retry_or_exit_unsaved() {
     for retry in [true, false] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::tempdir();
         let location = StorageLocation::at(dir.path().to_owned());
         let startup = prepare(&location, 100);
         fs::create_dir(location.state_path()).unwrap();
@@ -319,7 +321,7 @@ fn recovery_files(location: &StorageLocation) -> Vec<u8> {
 
 #[test]
 fn recovery_requires_explicit_acceptance_and_declining_preserves_original_files() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let backup = recovery_files(&location);
     let startup = Startup::open(location.clone(), settings(), Timestamp(2_000)).unwrap();
@@ -338,7 +340,7 @@ fn recovery_requires_explicit_acceptance_and_declining_preserves_original_files(
 
 #[test]
 fn confirmed_recovery_retries_once_then_adopts_without_a_second_restore() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let backup = recovery_files(&location);
     let Startup::RecoveryRequired(candidate) =
@@ -391,7 +393,7 @@ fn confirmed_recovery_retries_once_then_adopts_without_a_second_restore() {
 
 #[test]
 fn failed_recovery_returns_ownership_for_an_explicit_unsaved_exit() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let backup = recovery_files(&location);
     let Startup::RecoveryRequired(candidate) =
@@ -430,7 +432,7 @@ fn invalid_or_unsupported_load_never_initializes_or_overwrites_data() {
         br#"{"old_state":true}"#,
         br#"{"schema_version":999}"#,
     ] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::tempdir();
         let location = StorageLocation::at(dir.path().to_owned());
         fs::write(location.state_path(), bytes).unwrap();
         assert!(matches!(
@@ -446,7 +448,7 @@ fn invalid_or_unsupported_load_never_initializes_or_overwrites_data() {
 #[test]
 fn real_shutdown_failure_can_retry_or_exit_unsaved_and_releases_lock_only_on_exit() {
     for retry in [true, false] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = support::tempdir();
         let location = StorageLocation::at(dir.path().to_owned());
         seed(&location, &running(SessionKind::Focus));
         // from_saved here isolates final-save behavior from startup's restore.
@@ -488,7 +490,7 @@ fn real_shutdown_failure_can_retry_or_exit_unsaved_and_releases_lock_only_on_exi
 
 #[test]
 fn distraction_survives_saved_shutdown_reopen_and_explicit_return() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     seed(&location, &running(SessionKind::Focus));
     let clock = TestClock {

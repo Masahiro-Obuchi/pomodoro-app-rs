@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::{fs, process::Command};
 
@@ -24,8 +26,13 @@ fn unsupported_or_broken_load_exits_before_terminal_setup_without_overwriting() 
             "unsupported schema version 999",
         ),
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
+        #[cfg(target_os = "linux")]
         let state_directory = directory.path().join("pomodoro-app-rs");
+        #[cfg(target_os = "macos")]
+        let state_directory = directory
+            .path()
+            .join("Library/Application Support/pomodoro-app-rs");
         fs::create_dir_all(&state_directory).unwrap();
         let path = state_directory.join("state.json");
         fs::write(&path, original).unwrap();
@@ -35,10 +42,12 @@ fn unsupported_or_broken_load_exits_before_terminal_setup_without_overwriting() 
             fs::write(state_directory.join("state.json.bak"), VALID).unwrap();
         }
 
-        let output = Command::new(env!("CARGO_BIN_EXE_pomodoro-tui"))
-            .env("XDG_STATE_HOME", directory.path())
-            .output()
-            .unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pomodoro-tui"));
+        #[cfg(target_os = "linux")]
+        command.env("XDG_STATE_HOME", directory.path());
+        #[cfg(target_os = "macos")]
+        command.env("HOME", directory.path());
+        let output = command.output().unwrap();
 
         assert!(!output.status.success());
         let error = String::from_utf8_lossy(&output.stderr);

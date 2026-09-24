@@ -1,4 +1,4 @@
-//! Linux V1 storage boundary. Acquire a lock before load/initialization/recovery;
+//! Unix V1 storage boundary. Acquire a lock before load/initialization/recovery;
 //! owning a lock alone does not authorize overwriting an unread or invalid file.
 //! Load policy grants normal writes only after a valid V1/new-store check.
 //! Normal atomic save and retry retain one fixed candidate and its commit status.
@@ -16,6 +16,16 @@ mod recovery;
 mod save_error;
 
 pub use crate::{StorageLocation, StorageLockError};
+
+#[cfg(test)]
+pub(crate) fn test_tempdir() -> tempfile::TempDir {
+    let root = std::env::temp_dir()
+        .canonicalize()
+        .expect("canonical test temp root");
+    tempfile::Builder::new()
+        .tempdir_in(root)
+        .expect("test temp directory")
+}
 pub use atomic_save::PendingSave;
 pub use load::{
     LoadError, LoadOutcome, LoadProblem, RecoveryCandidate, SavedState, WritableStorage,

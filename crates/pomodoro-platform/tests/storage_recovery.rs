@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::{fs, os::unix::fs::PermissionsExt};
 
@@ -83,7 +85,7 @@ fn restore_states() -> Vec<DomainState> {
 fn recovery_restores_saved_states_and_returns_to_normal_saves_under_the_same_lock() {
     for domain in restore_states() {
         for original in [None, Some(BROKEN)] {
-            let directory = tempfile::tempdir().unwrap();
+            let directory = support::tempdir();
             let location = StorageLocation::at(directory.path().to_owned());
             let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap()
             else {
@@ -145,7 +147,7 @@ fn recovery_restores_saved_states_and_returns_to_normal_saves_under_the_same_loc
 #[test]
 fn cancelling_before_or_after_confirmation_changes_no_saved_files() {
     for confirm in [false, true] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let backup = include_bytes!("fixtures/state_v1.json");
         fs::write(location.state_path(), BROKEN).unwrap();
@@ -169,7 +171,7 @@ fn cancelling_before_or_after_confirmation_changes_no_saved_files() {
 
 #[test]
 fn real_quarantine_creation_failure_preserves_sources_and_can_retry() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let backup = include_bytes!("fixtures/state_v1.json");
     fs::write(location.state_path(), BROKEN).unwrap();

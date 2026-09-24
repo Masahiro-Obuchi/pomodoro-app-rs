@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::fs;
 
@@ -40,7 +42,7 @@ fn unavailable_time() -> Result<Timestamp, TimeError> {
 
 #[test]
 fn recovery_prompt_requires_consent_and_decline_preserves_both_files() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     // Long paths/diagnostics must not push the time, loss warning, and consent
     // keys out of a standard terminal's visible area.
     let location = StorageLocation::at(dir.path().join("a".repeat(150)).join("b".repeat(150)));
@@ -89,7 +91,7 @@ fn recovery_prompt_requires_consent_and_decline_preserves_both_files() {
 
 #[test]
 fn recovery_acceptance_saves_once_before_normal_operation() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("expected new store");
@@ -120,7 +122,7 @@ fn recovery_acceptance_saves_once_before_normal_operation() {
 
 #[test]
 fn startup_save_failure_requires_retry_or_confirmed_unsaved_exit() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let gate = open(&location);
     fs::create_dir(location.state_path()).unwrap();
@@ -150,7 +152,7 @@ fn startup_save_failure_requires_retry_or_confirmed_unsaved_exit() {
 
 #[test]
 fn unavailable_clock_does_not_block_confirmed_unsaved_exit() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let gate = open(&location);
     fs::create_dir(location.state_path()).unwrap();
@@ -172,7 +174,7 @@ fn unavailable_clock_does_not_block_confirmed_unsaved_exit() {
 
 #[test]
 fn recovery_consent_waits_until_the_warning_and_keys_fit_on_screen() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = support::tempdir();
     let location = StorageLocation::at(dir.path().to_owned());
     let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("expected new store");

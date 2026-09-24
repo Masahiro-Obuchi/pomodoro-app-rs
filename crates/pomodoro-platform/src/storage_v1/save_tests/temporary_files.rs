@@ -45,7 +45,7 @@ fn leave_owned_temporary(location: &StorageLocation) -> Option<(WritableStorage,
 
 #[test]
 fn initial_retry_accepts_only_its_owned_temporary_and_cleans_it() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let Some((mut store, path)) = leave_owned_temporary(&location) else {
         return;
@@ -60,7 +60,7 @@ fn initial_retry_accepts_only_its_owned_temporary_and_cleans_it() {
 
 #[test]
 fn an_owned_temporary_does_not_hide_external_backups() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let Some((mut store, path)) = leave_owned_temporary(&location) else {
         return;
@@ -81,14 +81,14 @@ fn an_owned_temporary_does_not_hide_external_backups() {
 #[test]
 fn replaced_temporary_paths_are_neither_accepted_nor_deleted() {
     for use_symlink in [false, true] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let Some((mut store, path)) = leave_owned_temporary(&location) else {
             return;
         };
         // The old file remains open, so its inode cannot be reused by replacement.
         fs::remove_file(&path).unwrap();
-        let target_directory = tempfile::tempdir().unwrap();
+        let target_directory = crate::storage_v1::test_tempdir();
         let target = target_directory.path().join("external");
         if use_symlink {
             fs::write(&target, VALID).unwrap();

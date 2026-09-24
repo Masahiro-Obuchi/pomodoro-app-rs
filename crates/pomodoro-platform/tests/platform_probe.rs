@@ -167,6 +167,21 @@ fn probe_storage_base_directories() {
     println!("{MARKER}data_local_dir={:?}", base.data_local_dir());
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn probe_macos_full_sync_for_file_and_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("state.json.tmp");
+    fs::write(&file_path, b"candidate").unwrap();
+    let file = File::open(&file_path).unwrap();
+    let file_result = rustix::fs::fcntl_fullfsync(&file);
+    println!("{MARKER}macos_file_fullfsync={file_result:?}");
+
+    let directory = File::open(dir.path()).unwrap();
+    let directory_result = rustix::fs::fcntl_fullfsync(&directory);
+    println!("{MARKER}macos_directory_fullfsync={directory_result:?}");
+}
+
 #[cfg(windows)]
 #[test]
 fn probe_windows_directory_handle_sync() {

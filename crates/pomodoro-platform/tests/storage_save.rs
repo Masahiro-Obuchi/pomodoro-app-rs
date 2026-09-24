@@ -1,4 +1,6 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
+
+mod support;
 
 use std::{
     fs,
@@ -26,7 +28,7 @@ fn domain() -> DomainState {
 
 #[test]
 fn first_and_consecutive_saves_preserve_domain_and_previous_exact_bytes() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut store = load(&location);
     let mut domain = domain();
@@ -66,7 +68,7 @@ fn first_and_consecutive_saves_preserve_domain_and_previous_exact_bytes() {
 
 #[test]
 fn backup_copies_the_loaded_bytes_without_reencoding_or_adopting_other_temps() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     // Leading/trailing whitespace must be retained in the backup baseline.
     let mut bytes = b" \n".to_vec();
@@ -92,7 +94,7 @@ fn changed_or_deleted_primary_is_rejected_before_backup_or_candidate_creation() 
         Some(b"corrupt".to_vec()),
         None,
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         fs::write(location.state_path(), VALID).unwrap();
         fs::write(location.backup_path(), b"keep backup").unwrap();
@@ -116,7 +118,7 @@ fn changed_or_deleted_primary_is_rejected_before_backup_or_candidate_creation() 
 #[test]
 fn new_store_does_not_overwrite_files_that_appear_after_load() {
     for name in ["state.json", "state.json.bak", "state.json.tmp-external"] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut store = load(&location);
         let path = directory.path().join(name);
@@ -135,7 +137,7 @@ fn new_store_does_not_overwrite_files_that_appear_after_load() {
 #[test]
 fn generation_overflow_and_invalid_timestamp_write_nothing() {
     for overflow in [false, true] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut value: Value = serde_json::from_slice(VALID).unwrap();
         if overflow {
@@ -169,7 +171,7 @@ fn generation_overflow_and_invalid_timestamp_write_nothing() {
 
 #[test]
 fn initial_retry_protects_a_backup_added_after_a_real_write_failure() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut store = load(&location);
     fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o500)).unwrap();
@@ -208,7 +210,7 @@ fn initial_retry_protects_a_backup_added_after_a_real_write_failure() {
 
 #[test]
 fn primary_symlink_is_not_followed_and_backup_rename_failure_retains_candidate() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     let mut store = load(&location);
