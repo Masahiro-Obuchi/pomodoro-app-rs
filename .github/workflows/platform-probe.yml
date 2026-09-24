@@ -19,3 +19,5 @@ jobs:
         run: rustup toolchain install 1.86.0 --profile minimal
       - name: Probe local filesystem
         run: cargo +1.86.0 test --locked -p pomodoro-platform --test platform_probe -- --nocapture
+      - name: Test shared platform code
+        run: cargo +1.86.0 test --locked -p pomodoro-platform --lib
