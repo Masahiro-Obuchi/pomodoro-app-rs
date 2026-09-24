@@ -27,9 +27,9 @@ The project currently provides a terminal user interface built with Ratatui. The
 - [Domain Model](docs/DOMAIN_MODEL.md): state ownership, session and interruption models, invariants, and transitions.
 - [Persistence Schema](docs/PERSISTENCE_SCHEMA.md): single-JSON format, validation, atomic saves, recovery, and single-process protection.
 
-The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Saved Current Tasks are displayed, restored distractions can be returned from, and restored Quick Start decisions can be finished or continued.
+The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Current Tasks can be entered and restored, distractions can be reported and returned from even after a restart, and restored Quick Start decisions can be finished or continued.
 
-These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry and Quick Start are available; reporting a new distraction through the TUI remains Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
+These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry, Quick Start, and distraction reporting and return are available. Explicit cancellation and full TUI workflow acceptance remain Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
 
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
