@@ -13,6 +13,8 @@ The project currently provides a terminal user interface built with Ratatui. The
 - Long break after every four completed focus sessions
 - Start, pause, resume, cancel, reset, and skip controls
 - Optional Current Task entry before Focus or Quick Start, saved with the session
+- Two-minute Quick Start with an explicit finish or continue choice
+- Distraction reporting and Return, including after a restart
 - In-app editing for session durations and the number of focus sessions per round
 - Monotonic timing that stops during application closure and observation gaps, including system sleep
 - V1 JSON persistence with atomic saves, backup recovery, and single-process locking
@@ -29,13 +31,13 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Current Tasks can be entered and restored, distractions can be reported and returned from even after a restart, and restored Quick Start decisions can be finished or continued.
 
-These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry, Quick Start, distraction reporting and return, and explicit cancellation are available. Full TUI workflow acceptance remains Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
+These documents also define features that are still planned. Phase 2's persistence cutover and Phase 3's TUI workflow are complete: Current Task entry, Quick Start, distraction reporting and return, explicit cancellation, and manual breaks are available. The full reflection UI and MVP acceptance checks remain in Phase 4.
 
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
 The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, dependencies, completion criteria, and phase-level progress. Detailed behavior belongs in the specifications; implementation details and verification evidence belong in code, tests, and PRs. The original plan remains available in Git history.
 
-The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md) is archived as a record of the persistence and V1 TUI cutover. The active [Phase 3 plan](docs/PHASE3_PLAN.md) outlines the remaining TUI input and workflow changes. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
+The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md) and [Phase 3 plan](docs/archive/PHASE3_PLAN.md) are archived as records of the persistence cutover and TUI workflow. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
 
 ## Requirements
 
@@ -66,6 +68,8 @@ cargo run -p pomodoro-tui
 | `q` | Save and quit |
 
 At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. During a running Focus or Quick Start, `d` records a distraction and stops work time. `Space` records Return and resumes the remaining work time, including after an exit and restart. While any session is running or interrupted, `x` ends that attempt and returns to Focus start. Credited work time remains in history; cancelling a distraction does not record a Return. Breaks and following sessions always wait for manual start.
+
+On terminals shorter than 20 rows, the timer keeps the operation and save recovery controls visible in place of the progress gauge and cumulative summary. Enlarge the terminal to see those panels.
 
 In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 

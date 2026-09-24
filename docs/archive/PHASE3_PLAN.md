@@ -3,7 +3,7 @@
 作成日：2026-09-23
 更新日：2026-09-23
 
-本書はPhase 3「TUIでの着手・集中・復帰」を、レビュー可能な変更単位へ分けた実行計画である。Phaseの進捗は[Implementation Plan](IMPLEMENTATION_PLAN.md)だけで管理する。機能の正本は[Product Spec](PRODUCT_SPEC.md)、状態と遷移の正本は[Domain Model](DOMAIN_MODEL.md)、保存契約の正本は[Persistence Schema](PERSISTENCE_SCHEMA.md)とし、本書で別の仕様を定義しない。
+本書はPhase 3「TUIでの着手・集中・復帰」を、レビュー可能な変更単位へ分けた実行計画である。Phaseの進捗は[Implementation Plan](../IMPLEMENTATION_PLAN.md)だけで管理する。機能の正本は[Product Spec](../PRODUCT_SPEC.md)、状態と遷移の正本は[Domain Model](../DOMAIN_MODEL.md)、保存契約の正本は[Persistence Schema](../PERSISTENCE_SCHEMA.md)とし、本書で別の仕様を定義しない。
 
 ## 1. 到達点と境界
 
