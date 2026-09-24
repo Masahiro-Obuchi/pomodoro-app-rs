@@ -27,6 +27,23 @@ fn complete_quick_start(h: &mut Harness) {
 }
 
 #[test]
+fn quick_start_decision_help_shows_available_choices_without_settings() {
+    let mut h = harness(awaiting(), 120_000);
+    press(&mut h.app, '?');
+    let display = render(&h.app, 80, 25);
+    assert!(
+        display.contains("f: Finish; c: Continue to Focus"),
+        "{display}"
+    );
+    assert!(display.contains("Settings unavailable"), "{display}");
+    assert!(!display.contains("Settings are available"));
+    let before = h.app.state().clone();
+    press(&mut h.app, 's');
+    assert!(h.app.settings().is_none());
+    assert_eq!(h.app.state(), &before);
+}
+
+#[test]
 fn quick_start_key_works_only_while_waiting_for_focus_and_inherits_the_task() {
     let mut h = with_task();
     assert!(render(&h.app, 100, 30).contains("2: Quick Start (2 min)"));
