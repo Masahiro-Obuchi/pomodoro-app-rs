@@ -30,6 +30,7 @@ TUIはキー入力、編集途中の文字列、表示とヘルプを担当す�
 | 表示中の状態 | 新しいキーの有効範囲 | 維持する主な操作 |
 | --- | --- | --- |
 | Focus開始待ち | `t`で作業名編集、`2`でQuick Start開始 | SpaceでFocus開始、`s`で設定、`n`で予定をSkip |
+| Quick Start開始待ち（Reset後） | `t`で保持した作業名を編集、`2`は無効 | SpaceでQuick Start開始、`n`でFocus開始待ちへ移動 |
 | Break開始待ち | `t`・`2`は無効 | SpaceでBreak開始、`n`でFocus開始待ちへ移動 |
 | Focus・Quick Start実行中 | `d`でDistraction、`x`で中止 | SpaceでPause、`r`でReset、`n`でSkip |
 | Break実行中 | `x`で中止、`d`は無効 | SpaceでPause、`r`でReset、`n`でSkip |
@@ -64,16 +65,16 @@ Bracketed Pasteに対応し`Event::Paste`を送る端末では、貼り付けを
 ### 3-1. Current Taskの入力
 
 - **対象**：`app.rs`の編集モード、必要な入力draft、`main.rs`のキー修飾子・Paste受け渡し、`ui.rs`、Appテスト、PTYテスト、README。
-- **変更**：Focus開始待ちで`t`を押すと保存済みdraftを初期値にして開く。文字追加・末尾削除、Enterで確定、Escで取消を実装する。`Event::Paste`で受けた行区切りを含む貼り付けは一括拒否し、それ以外の空白・前後空白の正規化は`CurrentTask::parse`に従う。不正な文字列は編集を維持して理由を表示する。作業名付きでFocusを始めたらSessionへ固定し、Resetでは次のdraftへ戻す。Break開始待ち・Active・選択待ちからは開かない。
+- **変更**：Focus・Quick Start開始待ちで`t`を押すと保存済みdraftを初期値にして開く。文字追加・末尾の書記素削除、Enterで確定、Escで取消を実装する。`Event::Paste`で受けた行区切り・制御文字を含む貼り付けは一括拒否し、前後の空白の正規化は`CurrentTask::parse`に従う。不正な文字列は編集を維持して理由を表示する。作業名付きでFocus・Quick Startを始めたらSessionへ固定し、Resetでは次のdraftへ戻す。Break開始待ち・Active・選択待ちからは開かない。
 - **保存境界**：Escや編集中の文字操作は保存しない。Enterだけが`SetCurrentTask`をcontrollerへ渡し、成功後に編集を閉じる。同じ内容ならno-opとして扱う。保存候補が作られた後の失敗では編集を閉じて保存待ちを示し、固定候補を再試行する。時計読取など候補を作れないエラーでは編集内容を維持して原因を表示する。未保存終了後も成功表示はしない。
 - **テスト・完了条件**：日本語、空白・前後空白、Backspace、取消・再編集、`q`／`?`を文字として入力する場合、修飾キー、`Event::Paste`で受ける単一行・複数行の貼り付け、同値確定、設定モードとの競合、保存失敗・再試行をAppで確認する。実ファイルとBracketed Pasteを送るPTYで、確定前にファイルが変わらないこと、Pasteの内容が通常操作へ漏れないこと、Focus開始後と再起動後の作業名、未入力開始を確認する。Pasteを送らない通常キー列では改行で編集が確定し得ることを確認し、この制約をREADMEに記す。長い入力と狭い端末でも全内容を保持し、編集操作を見失わない。3-0に依存する。
 
 ### 3-2. Quick Startの通常開始
 
 - **対象**：`app.rs`のReady入力分岐、`ui.rs`の開始待ち・選択待ち案内、App／PTYテスト、README。
-- **変更**：Focus開始待ちの`2`だけを`Start(QuickStart)`へ接続し、Spaceは通常Focus開始のまま保つ。保存済みCurrent TaskのdraftをQuick Startへ引き継ぐ。Break開始待ちでは`2`を無効とし、`n`でFocus開始待ちへ戻ってから選べる。自然完了後は既存の`f`でFinish、`c`で全時間の新しいFocusへContinueする。
+- **変更**：Focus開始待ちの`2`だけを`Start(QuickStart)`へ接続し、Spaceは通常Focus開始のまま保つ。保存済みCurrent TaskのdraftをQuick Startへ引き継ぐ。Quick StartをResetした後は`t`で保持したdraftを編集できるが、`2`は無効とする。Break開始待ちでも`2`を無効とし、`n`でFocus開始待ちへ戻ってから選べる。自然完了後は既存の`f`でFinish、`c`で全時間の新しいFocusへContinueする。
 - **保存境界**：開始、自然完了、Finish／Continueの候補は既存controllerで保存確定してから表示・通知する。選択待ちに時間を加算せず、アプリ終了・再起動でも自動選択しない。Continue再試行でFocus・ID・eventを重複作成しない。
-- **テスト・完了条件**：Appの注入時計で2分の境界、作業名継承、選択待ち、Finish／Continueの別結果、Focus完了数・ラウンドがQuick Startだけでは増えないことを確認する。PTYで`2`の開始と実ファイル保存を確認し、終了・再起動した選択待ちも検証する。開始・選択の保存失敗は再試行後の一回だけの遷移を確認する。実時間で2分待たない。3-1に依存する。
+- **テスト・完了条件**：Appの注入時計で2分の境界、作業名継承、Reset後の作業名編集、選択待ち、Finish／Continueの別結果、Focus完了数・ラウンドがQuick Startだけでは増えないことを確認する。PTYで`2`の開始と実ファイル保存、Reset後の作業名編集を確認し、終了・再起動した選択待ちも検証する。開始・選択の保存失敗は再試行後の一回だけの遷移を確認する。実時間で2分待たない。3-1に依存する。
 
 ### 3-3. Distraction申告とReturn
 
