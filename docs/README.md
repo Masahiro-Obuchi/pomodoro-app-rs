@@ -10,6 +10,7 @@
 | [Domain Model](DOMAIN_MODEL.md) | 状態、遷移、不変条件 |
 | [Persistence Schema](PERSISTENCE_SCHEMA.md) | 保存形式、検証、保存と復旧の契約 |
 | [Implementation Plan](IMPLEMENTATION_PLAN.md) | Phaseの順序、完了条件、現在の進捗 |
+| [Windows / macOS 対応計画](WINDOWS_MACOS_PLAN.md) | 完了済みPhaseから独立したTUIの対応OS拡張計画 |
 
 ## 過去資料
 

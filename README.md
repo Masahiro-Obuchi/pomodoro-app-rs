@@ -39,6 +39,8 @@ The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, depe
 
 The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md), [Phase 3 plan](docs/archive/PHASE3_PLAN.md), and [Phase 4 plan](docs/archive/PHASE4_PLAN.md) are archived as records of their implementation. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
 
+The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate future expansion of the TUI. The current executable remains Linux-only.
+
 ## Requirements
 
 - Linux with a local filesystem for saved state
