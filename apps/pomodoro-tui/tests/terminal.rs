@@ -318,6 +318,57 @@ fn executable_starts_quick_start_with_the_saved_task() {
     assert!(tui.finish().success());
 }
 
+#[test]
+fn executable_edits_retained_task_after_quick_start_reset() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("2: Quick Start (2 min)");
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    paste(&mut tui, "原稿を書く");
+    tui.expect("原稿を書く");
+    tui.send(b"\r");
+    tui.expect("Task saved");
+    tui.send(b"2");
+    tui.expect("Running");
+    tui.send(b"r");
+    tui.expect("t: Edit task");
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    paste(&mut tui, " 次");
+    tui.expect("次");
+    tui.send(b"\r");
+    tui.expect("Task saved");
+    tui.send(b" ");
+    tui.expect("Pause");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+    let store = loaded(&location);
+    let domain = store.saved_state().unwrap().domain();
+    assert_eq!(domain.history().sessions.len(), 1);
+    assert_eq!(
+        domain.history().sessions[0].end.unwrap().outcome,
+        SessionOutcome::Reset
+    );
+    assert_eq!(
+        domain.history().sessions[0]
+            .current_task
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "原稿を書く"
+    );
+    let ProgressState::Active { session, .. } = &domain.snapshot().state else {
+        panic!("expected restarted Quick Start")
+    };
+    assert_eq!(session.kind, SessionKind::QuickStart);
+    assert_eq!(
+        session.current_task.as_ref().unwrap().as_str(),
+        "原稿を書く 次"
+    );
+}
+
 fn seed_awaiting_quick_start(location: &StorageLocation) {
     let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("expected new store")

@@ -79,6 +79,66 @@ fn quick_start_key_works_only_while_waiting_for_focus_and_inherits_the_task() {
 }
 
 #[test]
+fn reset_quick_start_keeps_its_task_editable_before_restart() {
+    let mut h = with_task();
+    press(&mut h.app, '2');
+    h.at.set(100);
+    press(&mut h.app, 'r');
+    let ProgressState::Ready {
+        next_kind,
+        current_task_draft,
+    } = &h.app.state().snapshot().state
+    else {
+        panic!("expected Quick Start ready")
+    };
+    assert_eq!(*next_kind, SessionKind::QuickStart);
+    assert_eq!(current_task_draft.as_ref().unwrap().as_str(), "原稿を書く");
+    let display = render(&h.app, 100, 30);
+    assert!(display.contains("t: Edit task"));
+    assert!(!display.contains("2: Quick Start"));
+    let before = h.app.state().clone();
+    press(&mut h.app, '2');
+    assert_eq!(h.app.state(), &before);
+
+    press(&mut h.app, 't');
+    assert_eq!(h.app.task_edit(), Some("原稿を書く"));
+    h.app.handle_event(Event::Paste(" 次".into()));
+    h.app.handle_key(KeyCode::Enter);
+    let ProgressState::Ready {
+        current_task_draft, ..
+    } = &h.app.state().snapshot().state
+    else {
+        panic!("expected Quick Start ready")
+    };
+    assert_eq!(
+        current_task_draft.as_ref().unwrap().as_str(),
+        "原稿を書く 次"
+    );
+    assert_eq!(
+        h.app.state().history().sessions[0]
+            .current_task
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "原稿を書く"
+    );
+    assert_eq!(
+        h.app.state().history().sessions[0].end.unwrap().outcome,
+        SessionOutcome::Reset
+    );
+    press(&mut h.app, ' ');
+    let ProgressState::Active { session, .. } = &h.app.state().snapshot().state else {
+        panic!("expected restarted Quick Start")
+    };
+    assert_eq!(session.kind, SessionKind::QuickStart);
+    assert_eq!(session.id, SessionId(2));
+    assert_eq!(
+        session.current_task.as_ref().unwrap().as_str(),
+        "原稿を書く 次"
+    );
+}
+
+#[test]
 fn two_minute_completion_waits_for_finish_or_a_new_full_focus() {
     for choice in ['f', 'c'] {
         let mut h = with_task();

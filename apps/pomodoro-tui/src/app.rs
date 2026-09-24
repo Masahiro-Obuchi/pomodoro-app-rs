@@ -239,19 +239,23 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     }
 
     fn open_task(&mut self) {
-        if let ProgressState::Ready {
-            next_kind: SessionKind::Focus,
+        let ProgressState::Ready {
+            next_kind,
             current_task_draft,
         } = &self.state().snapshot().state
-        {
-            self.task_edit = Some(
-                current_task_draft
-                    .as_ref()
-                    .map_or_else(String::new, |task| task.as_str().to_owned()),
-            );
-            self.show_help = false;
-            self.message.clear();
+        else {
+            return;
+        };
+        if !next_kind.is_work() {
+            return;
         }
+        self.task_edit = Some(
+            current_task_draft
+                .as_ref()
+                .map_or_else(String::new, |task| task.as_str().to_owned()),
+        );
+        self.show_help = false;
+        self.message.clear();
     }
 
     fn handle_task_key(&mut self, event: KeyEvent) {

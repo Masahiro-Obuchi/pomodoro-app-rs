@@ -55,7 +55,7 @@ cargo run -p pomodoro-tui
 | Key | Action |
 | --- | --- |
 | `Space` | Start, pause, or resume |
-| `t` | Edit the optional Current Task while waiting to start Focus |
+| `t` | Edit the optional Current Task while waiting to start Focus or Quick Start |
 | `2` | Start a two-minute Quick Start while waiting to start Focus |
 | `r` | End/reset the current session; the next start creates a new session |
 | `n` | Skip to the next session |
@@ -63,7 +63,7 @@ cargo run -p pomodoro-tui
 | `?` | Toggle help |
 | `q` | Save and quit |
 
-At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. For a restored distraction, `Space` records Return. Breaks and following sessions always wait for manual start.
+At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. For a restored distraction, `Space` records Return. Breaks and following sessions always wait for manual start.
 
 In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 

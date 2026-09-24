@@ -48,12 +48,14 @@ impl NormalControls {
                     Binding::command('r', "r: Reset", Command::ResetReady),
                     Binding::command('n', "n: Skip", Command::SkipReady),
                 ];
-                if *next_kind == SessionKind::Focus {
+                if next_kind.is_work() {
                     bindings.push(Binding::new(
                         't',
                         Some("t: Edit task"),
                         NormalAction::RequestTask,
                     ));
+                }
+                if *next_kind == SessionKind::Focus {
                     bindings.push(Binding::command(
                         '2',
                         "2: Quick Start (2 min)",
