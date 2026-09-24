@@ -6,16 +6,16 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     fs, io,
-    os::unix::{
-        ffi::OsStringExt,
-        fs::{PermissionsExt, symlink},
-    },
+    os::unix::fs::{PermissionsExt, symlink},
     path::Path,
 };
 
 use pomodoro_core::{DomainState, ProgressState, TimerConfig, TimerState, Timestamp};
 use pomodoro_platform::{LoadOutcome, LoadProblem, StorageLocation, StorageLockError};
 use serde_json::{Value, json};
+
+#[cfg(target_os = "linux")]
+use std::os::unix::ffi::OsStringExt;
 
 const VALID: &[u8] = include_bytes!("fixtures/state_v1.json");
 
@@ -274,13 +274,20 @@ fn bad_backups_preserve_both_diagnostics_without_initializing() {
 
 #[test]
 fn temporary_quarantined_and_unrecognized_entries_prevent_initialization() {
-    for name in [
+    let names = vec![
         OsString::from("state.json.tmp-1"),
         "state.json.bak.tmp-1".into(),
         "state.json.quarantine-1".into(),
         "unknown-file".into(),
-        OsString::from_vec(vec![0xff]),
-    ] {
+    ];
+    // macOS filesystems reject this byte sequence when creating a filename.
+    #[cfg(target_os = "linux")]
+    let names = {
+        let mut names = names;
+        names.push(OsString::from_vec(vec![0xff]));
+        names
+    };
+    for name in names {
         let directory = support::tempdir();
         let location = location(&directory);
         let path = directory.path().join(name);
