@@ -135,10 +135,22 @@ fn probe_replace_existing_file_and_directory_sync() {
     let old_handle = File::open(&target).unwrap();
     let open_target_result = fs::rename(&replacement, &target);
     println!("{MARKER}replace_with_open_target={open_target_result:?}");
-    if open_target_result.is_err() {
-        assert_eq!(fs::read(&target).unwrap(), b"old");
-        drop(old_handle);
-        fs::rename(&replacement, &target).unwrap();
+    drop(old_handle);
+    if let Err(rename_error) = open_target_result {
+        // A Windows replacement error does not prove that the target stayed old.
+        let observed = fs::read(&target).unwrap_or_else(|read_error| {
+            panic!("cannot reconcile rename error {rename_error}: target read failed: {read_error}")
+        });
+        println!("{MARKER}target_after_rename_error={observed:?}");
+        if observed == b"old" {
+            fs::rename(&replacement, &target)
+                .expect("retry failed after confirming the old target remains");
+        } else {
+            assert_eq!(
+                observed, b"new",
+                "rename error left neither the old nor replacement content"
+            );
+        }
     }
     assert_eq!(fs::read(&target).unwrap(), b"new");
 
