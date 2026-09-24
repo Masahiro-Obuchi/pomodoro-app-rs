@@ -394,7 +394,9 @@ fn command_message(command: &Command) -> &'static str {
         Command::Start(SessionKind::QuickStart) => "Quick Start started and saved.",
         Command::Start(_) => "Session started and saved.",
         Command::Pause(_) => "Paused and saved.",
-        Command::Resume(_) | Command::Return(_) => "Resumed and saved.",
+        Command::Resume(_) => "Resumed and saved.",
+        Command::Distraction(_) => "Distraction saved. Press Space to return.",
+        Command::Return(_) => "Returned to work and saved.",
         Command::End {
             outcome: SessionOutcome::Reset,
             ..
@@ -403,7 +405,7 @@ fn command_message(command: &Command) -> &'static str {
         Command::End { .. } | Command::SkipReady => "Ready for the next session.",
         Command::DecideQuickStart { .. } => "Quick Start choice saved.",
         Command::CloseApp => "State saved. Exiting.",
-        _ => "Action saved.",
+        Command::RestoreApp => "Action saved.",
     }
 }
 
