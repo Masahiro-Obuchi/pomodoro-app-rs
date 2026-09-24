@@ -5,7 +5,7 @@ use std::{cell::Cell, fs, path::Path, rc::Rc};
 use crossterm::event::{Event, KeyCode};
 use pomodoro_core::{
     DomainState, EventKind, Observation, ProgressState, QuickStartDecision, SessionId, SessionKind,
-    SessionOutcome, TimerConfig, Timestamp,
+    SessionOutcome, TimerConfig, TimerState, Timestamp,
 };
 use pomodoro_platform::{LoadOutcome, StorageLocation, TimeError};
 use pomodoro_tui::{
@@ -98,7 +98,9 @@ fn assert_saved_choice<
             panic!("expected linked Focus after Continue")
         };
         assert_eq!(session.kind, SessionKind::Focus);
+        assert_eq!(session.started_at, Timestamp(130_000));
         assert_eq!(session.planned_duration_ms, 25 * 60_000);
+        assert_eq!(session.elapsed_ms, 0);
         assert_eq!(
             session.current_task.as_ref().unwrap().as_str(),
             "write draft"
@@ -157,9 +159,20 @@ fn assert_continued_focus_completed<
     path: &Path,
     alert_count: &Cell<u32>,
 ) {
-    for _ in 0..300 {
+    for tick in 1_u64..=299 {
         app.tick();
+        let ProgressState::Active {
+            session,
+            timer: TimerState::Running { .. },
+        } = &app.state().snapshot().state
+        else {
+            panic!("Focus completed before its full 25 minutes at tick {tick}")
+        };
+        assert_eq!(session.kind, SessionKind::Focus);
+        assert_eq!(session.elapsed_ms, tick * 5_000);
+        assert_eq!(alert_count.get(), 1);
     }
+    app.tick(); // The 300th five-second interval reaches the 25-minute boundary.
     assert_eq!(alert_count.get(), 2);
     let saved = decode_saved_bytes(path);
     assert_eq!(saved, *app.state());
@@ -175,6 +188,7 @@ fn assert_continued_focus_completed<
     assert_eq!(focus.planned_duration_ms, 25 * 60_000);
     assert_eq!(focus.elapsed_ms, 25 * 60_000);
     assert_eq!(focus.end.unwrap().outcome, SessionOutcome::Completed);
+    assert_eq!(focus.end.unwrap().ended_at, Timestamp(1_630_000));
     assert_eq!(focus.current_task, quick_start.current_task);
     assert_eq!(
         saved
