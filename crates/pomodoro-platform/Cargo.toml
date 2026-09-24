@@ -12,11 +12,16 @@ pomodoro-core = { path = "../pomodoro-core" }
 serde.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+fs4 = "1.1.0"
+same-file = "1.0.6"
+tempfile = "3.26.0"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix.workspace = true
 
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-tempfile = "3.26.0"
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }
 
 [lints]
 workspace = true
