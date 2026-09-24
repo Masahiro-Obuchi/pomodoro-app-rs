@@ -144,6 +144,8 @@ fn probe_replace_existing_file_and_directory_sync() {
 
     let directory_sync = File::open(dir.path()).and_then(|file| file.sync_all());
     println!("{MARKER}std_directory_sync={directory_sync:?}");
+    #[cfg(unix)]
+    directory_sync.expect("Unix directory sync failed");
 }
 
 #[test]
@@ -165,6 +167,9 @@ fn probe_windows_directory_handle_sync() {
             .open(dir.path())
             .and_then(|file| file.sync_all());
         println!("{MARKER}backup_semantics_directory_sync_{name}={result:?}");
+        if write {
+            result.expect("write-access directory sync failed");
+        }
     }
 }
 
