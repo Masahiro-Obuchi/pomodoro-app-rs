@@ -488,6 +488,162 @@ fn executable_cancels_running_work_break_and_unreturned_distraction() {
 }
 
 #[test]
+fn executable_workflow_keeps_task_and_return_then_starts_break_manually() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("2: Quick Start (2 min)");
+    tui.send(b"s");
+    tui.expect("Focus duration");
+    tui.send(b"\x1b[C");
+    tui.send(b"\r");
+    tui.expect("Settings saved");
+    tui.send(b"t");
+    tui.expect("Current Task · unsaved edit");
+    paste(&mut tui, "write draft");
+    tui.expect("write draft");
+    tui.send(b"\r");
+    tui.expect("Task saved");
+    tui.send(b"2");
+    tui.expect("Quick Start · Running");
+    tui.send(b"d");
+    tui.expect("Awaiting Return");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+
+    let store = loaded(&location);
+    let first = store.saved_state().unwrap().domain();
+    let ProgressState::Active { session, .. } = &first.snapshot().state else {
+        panic!("expected interrupted Quick Start")
+    };
+    assert_eq!(session.kind, SessionKind::QuickStart);
+    assert_eq!(
+        session.current_task.as_ref().unwrap().as_str(),
+        "write draft"
+    );
+    let session_id = session.id;
+    let work_before_restart = first.reflection().unwrap().work_ms;
+    assert_eq!(first.reflection().unwrap().distractions, 1);
+    drop(store);
+
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("Awaiting Return");
+    tui.send(b" ");
+    tui.expect("Returned to work and saved");
+    tui.send(b"x");
+    tui.expect("Ready for Focus");
+    tui.send(b"n");
+    tui.expect("Short Break · Ready");
+    tui.send(b" ");
+    tui.expect("Short Break · Running");
+    tui.send(b" ");
+    tui.expect("Paused");
+    tui.send(b" ");
+    tui.expect("Resumed and saved");
+    tui.send(b"x");
+    tui.expect("Ready for Focus");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+
+    let store = loaded(&location);
+    let domain = store.saved_state().unwrap().domain();
+    assert_eq!(domain.snapshot().settings.focus_seconds(), 26 * 60);
+    assert_eq!(domain.history().sessions.len(), 2);
+    assert_eq!(domain.history().sessions[0].id, session_id);
+    assert_eq!(domain.history().sessions[0].kind, SessionKind::QuickStart);
+    assert_eq!(
+        domain.history().sessions[0].end.unwrap().outcome,
+        SessionOutcome::Cancelled
+    );
+    assert_eq!(domain.history().sessions[1].kind, SessionKind::ShortBreak);
+    assert_eq!(
+        domain.history().sessions[1].end.unwrap().outcome,
+        SessionOutcome::Cancelled
+    );
+    assert!(matches!(
+        domain.snapshot().state,
+        ProgressState::Ready {
+            next_kind: SessionKind::Focus,
+            ..
+        }
+    ));
+    let summary = domain.reflection().unwrap();
+    assert_eq!((summary.distractions, summary.returns), (1, 1));
+    assert!(summary.work_ms >= work_before_restart);
+    assert_eq!(
+        domain
+            .history()
+            .events
+            .iter()
+            .filter(|event| matches!(
+                event.payload,
+                EventKind::InterruptionEnded {
+                    end: pomodoro_core::InterruptionEnd {
+                        outcome: pomodoro_core::InterruptionOutcome::Returned,
+                        ..
+                    },
+                    ..
+                }
+            ))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn executable_retries_or_exits_unsaved_after_failed_distraction_save() {
+    for retry in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let location = location(dir.path());
+        let mut tui = Tui::spawn(dir.path());
+        tui.expect("Focus");
+        tui.send(b" ");
+        tui.expect("Session started and saved");
+        let original = fs::read(location.state_path()).unwrap();
+        fs::remove_file(location.backup_path()).unwrap();
+        fs::create_dir(location.backup_path()).unwrap();
+        tui.send(b"d");
+        tui.expect("RenameBackup");
+        assert_eq!(fs::read(location.state_path()).unwrap(), original);
+        if retry {
+            fs::remove_dir(location.backup_path()).unwrap();
+            tui.send(b"r");
+            tui.expect("Distraction saved");
+            tui.send(b"q");
+            assert!(tui.finish().success());
+            let store = loaded(&location);
+            let domain = store.saved_state().unwrap().domain();
+            assert_eq!(domain.reflection().unwrap().distractions, 1);
+            assert_eq!(domain.reflection().unwrap().returns, 0);
+            assert!(matches!(
+                domain.snapshot().state,
+                ProgressState::Active {
+                    timer: TimerState::Interrupted { .. },
+                    ..
+                }
+            ));
+        } else {
+            tui.send(b"Q");
+            tui.expect("y: Exit unsaved");
+            tui.send(b"y");
+            assert!(!tui.finish().success());
+            assert_eq!(fs::read(location.state_path()).unwrap(), original);
+            let store = loaded(&location);
+            assert_eq!(
+                store
+                    .saved_state()
+                    .unwrap()
+                    .domain()
+                    .reflection()
+                    .unwrap()
+                    .distractions,
+                0
+            );
+        }
+    }
+}
+
+#[test]
 fn executable_edits_retained_task_after_quick_start_reset() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());

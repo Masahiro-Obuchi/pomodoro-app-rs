@@ -17,6 +17,7 @@ mod distraction;
 mod quick_start;
 mod reflection;
 mod task;
+mod visibility;
 
 type Log = Rc<RefCell<Vec<&'static str>>>;
 

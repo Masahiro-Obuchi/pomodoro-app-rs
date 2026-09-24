@@ -5,7 +5,7 @@ use pomodoro_core::{
 };
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, Gauge, Paragraph, Wrap},
@@ -53,14 +53,39 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     frame: &mut Frame<'_>,
     app: &App<S, C, N>,
 ) {
-    let sections = Layout::vertical([
+    let area = centered(frame.area(), 82, 25);
+    let compact_sections = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(0),
+        Constraint::Length(0),
+        Constraint::Min(0),
+    ])
+    .split(area);
+    if draw_recovery_size_warning(frame, app, area, compact_sections[4]) {
+        return;
+    }
+    let full_sections = Layout::vertical([
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(4),
         Constraint::Min(6),
     ])
-    .split(centered(frame.area(), 82, 25));
+    .split(area);
+    let full_footer_rows = full_sections[4].height.saturating_sub(2);
+    let full_footer_width = full_sections[4].width.saturating_sub(2);
+    let needed_footer_rows = Paragraph::new(footer_lines(app, false))
+        .wrap(Wrap { trim: false })
+        .line_count(full_footer_width);
+    let compact = area.height < 20
+        || full_footer_width == 0
+        || needed_footer_rows > usize::from(full_footer_rows);
+    let sections = if compact {
+        compact_sections
+    } else {
+        full_sections
+    };
     let snapshot = app.state().snapshot();
     let (kind, status, remaining_ms, total_ms, task) = timer_view(snapshot);
     let title = if app.pending_state().is_some() {
@@ -85,28 +110,30 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
         ),
         sections[1],
     );
-    let percent = total_ms.saturating_sub(remaining_ms).saturating_mul(100) / total_ms;
-    frame.render_widget(
-        Gauge::default()
-            .block(Block::default().borders(Borders::ALL))
-            .gauge_style(Style::default().fg(Color::LightCyan))
-            .percent(u16::try_from(percent).unwrap_or(100)),
-        sections[2],
-    );
-    let history = match app.reflection() {
-        Ok(summary) => format!(
-            "Total: Focus completed {} / Work {} min\nDistractions {} / Returns {}   Round {}/{}",
-            summary.completed_focus_sessions,
-            summary.work_ms / 60_000,
-            summary.distractions,
-            summary.returns,
-            snapshot.round_progress.completed_focuses_in_round,
-            snapshot.settings.focuses_before_long_break(),
-        ),
-        Err(error) => format!("Could not summarize history: {error}"),
-    };
-    frame.render_widget(panel(history, " History "), sections[3]);
-    let footer = footer_lines(app);
+    if !compact {
+        let percent = total_ms.saturating_sub(remaining_ms).saturating_mul(100) / total_ms;
+        frame.render_widget(
+            Gauge::default()
+                .block(Block::default().borders(Borders::ALL))
+                .gauge_style(Style::default().fg(Color::LightCyan))
+                .percent(u16::try_from(percent).unwrap_or(100)),
+            sections[2],
+        );
+        let history = match app.reflection() {
+            Ok(summary) => format!(
+                "Total: Focus completed {} / Work {} min\nDistractions {} / Returns {}   Round {}/{}",
+                summary.completed_focus_sessions,
+                summary.work_ms / 60_000,
+                summary.distractions,
+                summary.returns,
+                snapshot.round_progress.completed_focuses_in_round,
+                snapshot.settings.focuses_before_long_break(),
+            ),
+            Err(error) => format!("Could not summarize history: {error}"),
+        };
+        frame.render_widget(panel(history, " History "), sections[3]);
+    }
+    let footer = footer_lines(app, compact);
     frame.render_widget(
         Paragraph::new(footer)
             .wrap(Wrap { trim: false })
@@ -121,8 +148,42 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     }
 }
 
+fn draw_recovery_size_warning<S: SaveStore, C: Clock, N: CompletionNotifier>(
+    frame: &mut Frame<'_>,
+    app: &App<S, C, N>,
+    area: Rect,
+    footer_area: Rect,
+) -> bool {
+    let recovery_hint_count = match app.input_context() {
+        InputContext::SaveBlocked => usize::from(app.pending_state().is_some()) + 1,
+        InputContext::ConfirmUnsavedExit => 2,
+        _ => return false,
+    };
+    let footer_width = footer_area.width.saturating_sub(2);
+    let available_rows = footer_area.height.saturating_sub(2);
+    let required_rows = Paragraph::new(
+        footer_lines(app, true)
+            .into_iter()
+            .take(recovery_hint_count)
+            .collect::<Vec<_>>(),
+    )
+    .wrap(Wrap { trim: false })
+    .line_count(footer_width);
+    if footer_width > 0 && required_rows <= usize::from(available_rows) {
+        return false;
+    }
+    let prompt = if app.input_context() == InputContext::ConfirmUnsavedExit {
+        "Enlarge terminal to confirm unsaved exit."
+    } else {
+        "Enlarge terminal to show save recovery controls."
+    };
+    frame.render_widget(Paragraph::new(prompt).wrap(Wrap { trim: false }), area);
+    true
+}
+
 fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
     app: &App<S, C, N>,
+    compact: bool,
 ) -> Vec<Line<'_>> {
     let mut footer = vec![];
     match app.input_context() {
@@ -141,7 +202,9 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
                     session_label(kind)
                 )));
             }
-            footer.push(Line::from("Timer and actions are paused."));
+            if !compact {
+                footer.push(Line::from("Timer and actions are paused."));
+            }
             footer.push(Line::from("r: Retry save   Q: Confirm unsaved exit"));
         }
         InputContext::Normal => {
@@ -152,9 +215,11 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
                 app.state().snapshot().state,
                 ProgressState::AwaitingQuickStartDecision { .. }
             ) {
-                footer.push(Line::from(
-                    "Choice time is not counted. Continue starts a full Focus.",
-                ));
+                footer.push(Line::from(if compact {
+                    "Choice time excluded."
+                } else {
+                    "Choice time is not counted. Continue starts a full Focus."
+                }));
             }
             if app.show_help() {
                 footer.push(Line::from(match app.state().snapshot().state {
@@ -165,7 +230,11 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
                         "Reset keeps task and type; Skip advances; Cancel goes to Focus."
                     }
                     ProgressState::AwaitingQuickStartDecision { .. } => {
-                        "f: Finish; c: Continue to Focus. Settings unavailable."
+                        if compact {
+                            "Settings unavailable during f/c choice."
+                        } else {
+                            "f: Finish; c: Continue to Focus. Settings unavailable."
+                        }
                     }
                 }));
             }
