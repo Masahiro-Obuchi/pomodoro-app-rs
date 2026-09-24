@@ -319,6 +319,89 @@ fn executable_starts_quick_start_with_the_saved_task() {
 }
 
 #[test]
+fn executable_reports_distraction_and_returns_after_restart() {
+    for (start_key, kind) in [(b' ', SessionKind::Focus), (b'2', SessionKind::QuickStart)] {
+        let dir = tempfile::tempdir().unwrap();
+        let location = location(dir.path());
+        let mut tui = Tui::spawn(dir.path());
+        tui.expect("2: Quick Start (2 min)");
+        tui.send(&[start_key]);
+        tui.expect("Running");
+        tui.send(b"d");
+        tui.expect("Awaiting Return");
+        tui.send(b"q");
+        assert!(tui.finish().success());
+
+        let store = loaded(&location);
+        let domain = store.saved_state().unwrap().domain();
+        let ProgressState::Active {
+            session,
+            timer: TimerState::Interrupted { interruption },
+        } = &domain.snapshot().state
+        else {
+            panic!("expected a saved distraction")
+        };
+        assert_eq!(session.kind, kind);
+        assert_eq!(interruption.kind, InterruptionKind::Distraction);
+        let session_id = session.id;
+        let interruption_id = interruption.id;
+        assert_eq!(domain.reflection().unwrap().distractions, 1);
+        assert_eq!(domain.reflection().unwrap().returns, 0);
+        let work_before_return = domain.reflection().unwrap().work_ms;
+        drop(store);
+
+        let mut tui = Tui::spawn(dir.path());
+        tui.expect("Awaiting Return");
+        tui.send(b" ");
+        tui.expect("Returned to work and saved");
+        tui.send(b"q");
+        assert!(tui.finish().success());
+
+        let store = loaded(&location);
+        let domain = store.saved_state().unwrap().domain();
+        let ProgressState::Active { session, .. } = &domain.snapshot().state else {
+            panic!("expected active session")
+        };
+        assert_eq!(session.id, session_id);
+        assert_eq!(domain.reflection().unwrap().distractions, 1);
+        assert_eq!(domain.reflection().unwrap().returns, 1);
+        assert!(domain.reflection().unwrap().work_ms >= work_before_return);
+        let started = domain
+            .history()
+            .events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.payload,
+                    EventKind::InterruptionStarted {
+                        interruption_id: id,
+                        interruption_kind: InterruptionKind::Distraction,
+                    } if id == interruption_id
+                )
+            })
+            .count();
+        let returned = domain
+            .history()
+            .events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.payload,
+                    EventKind::InterruptionEnded {
+                        interruption_id: id,
+                        end: pomodoro_core::InterruptionEnd {
+                            outcome: pomodoro_core::InterruptionOutcome::Returned,
+                            ..
+                        },
+                    } if id == interruption_id
+                )
+            })
+            .count();
+        assert_eq!((started, returned), (1, 1));
+    }
+}
+
+#[test]
 fn executable_edits_retained_task_after_quick_start_reset() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
@@ -333,7 +416,7 @@ fn executable_edits_retained_task_after_quick_start_reset() {
     tui.send(b"2");
     tui.expect("Running");
     tui.send(b"r");
-    tui.expect("t: Edit task");
+    tui.expect("Quick Start · Ready");
     tui.send(b"t");
     tui.expect("Current Task · unsaved edit");
     paste(&mut tui, " 次");

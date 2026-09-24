@@ -76,7 +76,7 @@ impl NormalControls {
                         ("Space: Resume", Command::Resume(session.id))
                     }
                 };
-                vec![
+                let mut bindings = vec![
                     Binding::command(' ', space_hint, space_command),
                     Binding::command(
                         'r',
@@ -94,7 +94,15 @@ impl NormalControls {
                             outcome: SessionOutcome::Skipped,
                         },
                     ),
-                ]
+                ];
+                if session.kind.is_work() && matches!(timer, TimerState::Running { .. }) {
+                    bindings.push(Binding::command(
+                        'd',
+                        "d: Report distraction",
+                        Command::Distraction(session.id),
+                    ));
+                }
+                bindings
             }
             ProgressState::AwaitingQuickStartDecision {
                 quick_start_session_id,

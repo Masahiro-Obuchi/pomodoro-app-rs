@@ -27,9 +27,9 @@ The project currently provides a terminal user interface built with Ratatui. The
 - [Domain Model](docs/DOMAIN_MODEL.md): state ownership, session and interruption models, invariants, and transitions.
 - [Persistence Schema](docs/PERSISTENCE_SCHEMA.md): single-JSON format, validation, atomic saves, recovery, and single-process protection.
 
-The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Saved Current Tasks are displayed, restored distractions can be returned from, and restored Quick Start decisions can be finished or continued.
+The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Current Tasks can be entered and restored, distractions can be reported and returned from even after a restart, and restored Quick Start decisions can be finished or continued.
 
-These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry and Quick Start are available; reporting a new distraction through the TUI remains Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
+These documents also define features that are still planned. The Phase 2 persistence cutover and legacy cleanup are complete. Current Task entry, Quick Start, and distraction reporting and return are available. Explicit cancellation and full TUI workflow acceptance remain Phase 3 work. The full reflection UI and MVP acceptance checks remain in Phase 4.
 
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
@@ -54,16 +54,17 @@ cargo run -p pomodoro-tui
 
 | Key | Action |
 | --- | --- |
-| `Space` | Start, pause, or resume |
+| `Space` | Start, pause, resume, or return from a distraction |
 | `t` | Edit the optional Current Task while waiting to start Focus or Quick Start |
 | `2` | Start a two-minute Quick Start while waiting to start Focus |
+| `d` | Report a distraction while Focus or Quick Start is running |
 | `r` | End/reset the current session; the next start creates a new session |
 | `n` | Skip to the next session |
 | `s` | Open settings while Ready (waiting to start) |
 | `?` | Toggle help |
 | `q` | Save and quit |
 
-At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. For a restored distraction, `Space` records Return. Breaks and following sessions always wait for manual start.
+At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. During a running Focus or Quick Start, `d` records a distraction and stops work time. `Space` records Return and resumes the remaining work time, including after an exit and restart. Breaks and following sessions always wait for manual start.
 
 In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 
