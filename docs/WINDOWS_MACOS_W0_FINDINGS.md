@@ -2,11 +2,11 @@
 
 記録日（日本時間）：2026-09-25
 
-[Windows / macOS 対応計画](WINDOWS_MACOS_PLAN.md)の W0 で、保存 API の候補をネイティブ OS で確認した。現行 TUI は Linux 専用のままであり、この記録は Windows/macOS での保存実装が完成したことを示さない。
+[Windows / macOS 対応計画](WINDOWS_MACOS_PLAN.md)の W0 で、保存 API の候補をネイティブ OS で確認した。W0 は保存 API の調査と契約整理までの部分実施である。実端末の対象バージョンと通知方式はまだ決定していない。現行 TUI は Linux 専用のままであり、この記録は Windows/macOS での保存実装が完成したことを示さない。
 
 ## 実測した環境と結果
 
-Rust 1.86.0、GitHub Actions の `ubuntu-24.04`、`windows-2025`、`macos-15`（Apple Silicon）、`macos-15-intel` を使用した。検証コードは [`platform_probe.rs`](../crates/pomodoro-platform/tests/platform_probe.rs)、実行手順は [`platform-probe.yml`](../.github/workflows/platform-probe.yml)にある。[PR #36 の検証結果](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36024491006)を原記録とする。各検証は OS の動作を観測するもので、電源断の再現ではない。
+Rust 1.86.0、GitHub Actions の `ubuntu-24.04`、`windows-2025`、`macos-15`（Apple Silicon）、`macos-15-intel` を使用した。検証コードは [`platform_probe.rs`](../crates/pomodoro-platform/tests/platform_probe.rs)、実行手順は [`platform-probe.yml`](../.github/workflows/platform-probe.yml)にある。[PR #36 の検証結果](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36025404687)を記録とする。各検証は OS の動作を観測するもので、電源断の再現ではない。
 
 | 項目 | Linux | macOS 15（両アーキテクチャ） | Windows Server 2025 x64 |
 | --- | --- | --- | --- |
@@ -21,6 +21,14 @@ Rust 1.86.0、GitHub Actions の `ubuntu-24.04`、`windows-2025`、`macos-15`（
 | リンクを追わずに開いたWindowsのシンボリックリンク | 対象外 | 対象外 | リンク自身のmetadataを取得 |
 
 Windowsのディレクトリ同期では `OpenOptionsExt::custom_flags(FILE_FLAG_BACKUP_SEMANTICS)` と書込アクセスを指定した。読込アクセスだけの同じ試行は Access denied だった。この結果は CI の管理者権限を持つ runner で得たもので、Windows 11 の通常ユーザー・異なるファイルシステム・電源断時の保証へそのまま一般化しない。
+
+## W0で残した決定・検証
+
+| 残した事項 | 今回確認した範囲 | 担当レビュー単位 |
+| --- | --- | --- |
+| 実端末の対象 OS・端末バージョン | CI runner の OS ラベルと CPU アーキテクチャのみ。Windows Terminal、PowerShell、Terminal.app のバージョンは未確認 | W5。実端末受入の開始前に組合せを固定し、結果と README に記録する |
+| macOS/Windows の通知方式 | `notify-rust` は候補。Rust 1.86 での adapter ビルド、実表示、権限拒否時の動作は未確認 | W4。方式を選定し、実装と検証結果を記録する |
+| 保存 API の残る境界 | 子プロセスへのロック継承、リンク・reparse point を対象にした置換、一時ファイルの安全な削除、通常ユーザーの権限・読込エラーは未確認 | W2/W3。OS ごとの保存・復旧実装と失敗注入で確認する。TUI のエラー表示は W4 で確認する |
 
 ## 実装時に採る境界
 
