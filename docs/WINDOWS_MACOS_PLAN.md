@@ -2,11 +2,13 @@
 
 作成日（日本時間）：2026-09-25
 
-状態：W0のネイティブ検証を実施。保存実装は未着手
+状態：W0のネイティブ検証は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)でレビュー中。W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)で検証中。macOS/Windowsの保存実装は未着手
 
 この計画は完了済みの Phase 0–4 とは独立した、既存 TUI の対応 OS 拡張を扱う。進捗は本書で管理し、Phase の完了状態は変更しない。実装を始める際は、各レビュー単位を独立した commit / PR にまとめ、依存順に確認する。
 
 W0の実測と判断候補は[調査記録](WINDOWS_MACOS_W0_FINDINGS.md)に置く。OSごとの保存実装と実端末受入は引き続き必要である。
+
+W1では保存先の解決を共通化し、Linux固有のファイル操作をV1保存 policy から分離する。TUI/controller の Linux 限定 `cfg` は、W2/W3で対象OSの保存 adapter が利用できるようになったときに外す。
 
 ## 1. 目標と対象
 
