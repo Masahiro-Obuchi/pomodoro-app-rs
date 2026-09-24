@@ -11,16 +11,15 @@
 mod atomic_save;
 mod file_io;
 mod load;
-mod location;
 mod lock;
 mod recovery;
 mod save_error;
 
+pub use crate::{StorageLocation, StorageLockError};
 pub use atomic_save::PendingSave;
 pub use load::{
     LoadError, LoadOutcome, LoadProblem, RecoveryCandidate, SavedState, WritableStorage,
 };
-pub use location::StorageLocation;
-pub use lock::{LockedStorage, StorageLockError};
+pub use lock::LockedStorage;
 pub use recovery::RecoverySave;
 pub use save_error::{SaveError, SaveStage};
