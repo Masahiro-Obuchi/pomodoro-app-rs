@@ -11,6 +11,7 @@
 | [Persistence Schema](PERSISTENCE_SCHEMA.md) | 保存形式、検証、保存と復旧の契約 |
 | [Implementation Plan](IMPLEMENTATION_PLAN.md) | Phaseの順序、完了条件、現在の進捗 |
 | [Windows / macOS 対応計画](WINDOWS_MACOS_PLAN.md) | 完了済みPhaseから独立したTUIの対応OS拡張計画 |
+| [Windows / macOS W0調査](WINDOWS_MACOS_W0_FINDINGS.md) | 保存APIのネイティブ検証結果、採用候補、残る確認項目 |
 
 ## 過去資料
 
