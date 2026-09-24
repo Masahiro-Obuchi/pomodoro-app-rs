@@ -31,15 +31,13 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 The normal executable now uses the V1 domain, storage, and save-confirmed controller. On restart, interrupted sessions wait for manual resumption; application downtime and observation gaps are not added to work or break time. Current Tasks can be entered and restored, distractions can be reported and returned from even after a restart, and restored Quick Start decisions can be finished or continued.
 
-These documents also define features that are still planned. Phase 2's persistence cutover and Phase 3's TUI workflow are complete: Current Task entry, Quick Start, distraction reporting and return, explicit cancellation, and manual breaks are available. The full reflection UI and MVP acceptance checks remain in Phase 4.
+The expanded MVP is implemented in the TUI. The Product Spec also records ideas outside the MVP, including Later Box, AI assistance, and a GUI.
 
 The target format starts with fresh data and does not import existing settings, summaries, or timer state. Unsupported or invalid files must not be overwritten automatically.
 
 The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, dependencies, completion criteria, and phase-level progress. Detailed behavior belongs in the specifications; implementation details and verification evidence belong in code, tests, and PRs. The original plan remains available in Git history.
 
-The [Phase 4 plan](docs/PHASE4_PLAN.md) covers the remaining reflection UI and MVP acceptance checks.
-
-The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md) and [Phase 3 plan](docs/archive/PHASE3_PLAN.md) are archived as records of the persistence cutover and TUI workflow. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
+The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md), [Phase 3 plan](docs/archive/PHASE3_PLAN.md), and [Phase 4 plan](docs/archive/PHASE4_PLAN.md) are archived as records of their implementation. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
 
 ## Requirements
 
@@ -72,7 +70,7 @@ cargo run -p pomodoro-tui
 
 At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. During a running Focus or Quick Start, `d` records a distraction and stops work time. `Space` records Return and resumes the remaining work time, including after an exit and restart. While any session is running or interrupted, `x` ends that attempt and returns to Focus start. Credited work time remains in history; cancelling a distraction does not record a Return. Breaks and following sessions always wait for manual start.
 
-The History view shows recorded work time from Focus and Quick Start, naturally completed Focus sessions, reported distractions, and explicit Returns across all records, including the current session. Work time uses `H:MM:SS`; subsecond time is truncated only for display. Opening History does not pause the timer or save state. If a save fails while it is open, the recovery controls take priority.
+The History view shows recorded work time from Focus and Quick Start, naturally completed Focus sessions, reported distractions, and explicit Returns across all records, including the current session. Pause, distraction, break, and Quick Start choice time do not add work time. Work time uses `H:MM:SS`; subsecond time is truncated only for display. While a session runs, the shown time may include progress since the latest saved checkpoint. Opening History does not pause the timer or save state. If a save fails while it is open, the recovery controls take priority. During a pending save, the main screen shows the latest confirmed saved state and keeps the unconfirmed candidate separate.
 
 On short or narrow terminals, the timer hides the progress gauge and cumulative summary when their space is needed for operation and save recovery controls. Press `h` to view the totals when the summary is hidden. If the recovery keys or History view cannot fit, the screen asks you to enlarge the terminal. Enlarge the terminal to see the gauge and summary again.
 

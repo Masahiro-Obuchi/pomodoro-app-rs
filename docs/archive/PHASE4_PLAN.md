@@ -3,7 +3,7 @@
 作成日：2026-09-24
 更新日：2026-09-24
 
-本書はPhase 4「履歴の確認とMVPの受入検証」をレビュー可能な変更単位へ分けた実行計画である。Phaseの進捗は[Implementation Plan](IMPLEMENTATION_PLAN.md)だけで管理する。振る舞いの正本は[Product Spec](PRODUCT_SPEC.md)、状態と集計の正本は[Domain Model](DOMAIN_MODEL.md)、保存契約の正本は[Persistence Schema](PERSISTENCE_SCHEMA.md)とし、本書で別の仕様を定義しない。[Phase 3 Plan](archive/PHASE3_PLAN.md)は完了済みの過去資料としてアーカイブに置く。
+本書はPhase 4「履歴の確認とMVPの受入検証」をレビュー可能な変更単位へ分けた実行計画である。Phaseの進捗は[Implementation Plan](../IMPLEMENTATION_PLAN.md)だけで管理する。振る舞いの正本は[Product Spec](../PRODUCT_SPEC.md)、状態と集計の正本は[Domain Model](../DOMAIN_MODEL.md)、保存契約の正本は[Persistence Schema](../PERSISTENCE_SCHEMA.md)とし、本書で別の仕様を定義しない。[Phase 3 Plan](PHASE3_PLAN.md)は完了済みの過去資料としてアーカイブに置く。
 
 ## 1. 到達点と範囲
 
