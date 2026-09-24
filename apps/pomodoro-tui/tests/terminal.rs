@@ -402,6 +402,92 @@ fn executable_reports_distraction_and_returns_after_restart() {
 }
 
 #[test]
+fn executable_cancels_running_work_break_and_unreturned_distraction() {
+    for (kind, distracted) in [
+        (SessionKind::Focus, false),
+        (SessionKind::QuickStart, true),
+        (SessionKind::ShortBreak, false),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let location = location(dir.path());
+        if kind == SessionKind::ShortBreak {
+            let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap()
+            else {
+                panic!("expected new store")
+            };
+            let mut domain = DomainState::new(TimerConfig::default()).unwrap();
+            domain
+                .apply(DomainCommand::Start(SessionKind::Focus), Timestamp(0))
+                .unwrap();
+            domain
+                .apply(
+                    DomainCommand::End {
+                        session_id: pomodoro_core::SessionId(1),
+                        outcome: SessionOutcome::Skipped,
+                    },
+                    Timestamp(0),
+                )
+                .unwrap();
+            store.save(&domain, Timestamp(0)).unwrap();
+        }
+        let mut tui = Tui::spawn(dir.path());
+        if kind == SessionKind::ShortBreak {
+            tui.expect("Short Break · Ready");
+        } else {
+            tui.expect("2: Quick Start (2 min)");
+        }
+        tui.send(&[if kind == SessionKind::QuickStart {
+            b'2'
+        } else {
+            b' '
+        }]);
+        tui.expect("Running");
+        if distracted {
+            tui.send(b"d");
+            tui.expect("Awaiting Return");
+        }
+        tui.send(b"x");
+        tui.expect("Ready for Focus");
+        tui.send(b"q");
+        assert!(tui.finish().success());
+
+        let store = loaded(&location);
+        let domain = store.saved_state().unwrap().domain();
+        let session = domain.history().sessions.last().unwrap();
+        assert_eq!(session.kind, kind);
+        assert_eq!(session.end.unwrap().outcome, SessionOutcome::Cancelled);
+        assert!(matches!(
+            domain.snapshot().state,
+            ProgressState::Ready {
+                next_kind: SessionKind::Focus,
+                ..
+            }
+        ));
+        assert_eq!(domain.reflection().unwrap().returns, 0);
+        let ended = domain
+            .history()
+            .events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.payload,
+                    EventKind::InterruptionEnded {
+                        end: pomodoro_core::InterruptionEnd {
+                            outcome: pomodoro_core::InterruptionOutcome::SessionEnded {
+                                session_outcome: SessionOutcome::Cancelled,
+                            },
+                            ..
+                        },
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(ended, usize::from(distracted));
+    }
+}
+
+#[test]
 fn executable_edits_retained_task_after_quick_start_reset() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
