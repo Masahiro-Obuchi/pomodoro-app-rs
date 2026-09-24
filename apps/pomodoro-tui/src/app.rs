@@ -400,9 +400,21 @@ fn command_message(command: &Command) -> &'static str {
         Command::End {
             outcome: SessionOutcome::Reset,
             ..
-        } => "Reset to ready. The next start creates a new session.",
+        } => "Reset to ready. Restart this session type; any task is retained.",
+        Command::End {
+            outcome: SessionOutcome::Skipped,
+            ..
+        } => "Session skipped and saved. Ready for the next scheduled session.",
+        Command::End {
+            outcome: SessionOutcome::Cancelled,
+            ..
+        } => "Session cancelled and saved. Ready for Focus.",
+        Command::End {
+            outcome: SessionOutcome::Completed,
+            ..
+        } => "Session complete. Ready for the next session.",
         Command::ResetReady => "Already ready; nothing changed.",
-        Command::End { .. } | Command::SkipReady => "Ready for the next session.",
+        Command::SkipReady => "Skipped the planned session. Ready for the next session.",
         Command::DecideQuickStart { .. } => "Quick Start choice saved.",
         Command::CloseApp => "State saved. Exiting.",
         Command::RestoreApp => "Action saved.",

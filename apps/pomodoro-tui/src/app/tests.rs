@@ -12,6 +12,7 @@ use ratatui::{Terminal, backend::TestBackend};
 
 use super::*;
 
+mod cancel;
 mod distraction;
 mod quick_start;
 mod reflection;
