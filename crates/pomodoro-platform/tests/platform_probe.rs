@@ -3,7 +3,7 @@
 
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, Write},
+    io::{self, BufRead, Read, Write},
     path::Path,
     process::{Command, Stdio},
     sync::mpsc,
@@ -22,6 +22,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 const LOCK_PATH: &str = "POMODORO_PROBE_LOCK_PATH";
+const LOCK_HOLD: &str = "POMODORO_PROBE_LOCK_HOLD";
 const MARKER: &str = "PLATFORM_PROBE:";
 
 #[test]
@@ -36,6 +37,10 @@ fn lock_child() {
     let result = FileExt::try_lock(&file);
     println!("{MARKER}{result:?}");
     io::stdout().flush().unwrap();
+    if result.is_ok() && std::env::var_os(LOCK_HOLD).is_some() {
+        let mut input = [0];
+        io::stdin().read_exact(&mut input).unwrap();
+    }
 }
 
 #[test]
@@ -57,12 +62,24 @@ fn probe_nonblocking_file_lock_across_processes() {
 }
 
 fn child_lock_result(path: &Path) -> String {
+    let (mut child, receive) = spawn_lock_child(path, false);
+    let result = receive.recv_timeout(Duration::from_secs(10));
+    if result.is_err() {
+        let _ = child.kill();
+    }
+    let status = child.wait().unwrap();
+    assert!(status.success(), "child failed: {status}");
+    result.expect("child lock result timed out")
+}
+
+fn spawn_lock_child(path: &Path, hold: bool) -> (std::process::Child, mpsc::Receiver<String>) {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "lock_child", "--ignored", "--nocapture"])
         .env(LOCK_PATH, path)
-        .stdin(Stdio::null())
+        .stdin(if hold { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
+        .envs(hold.then_some((LOCK_HOLD, "1")))
         .spawn()
         .unwrap();
     let output = child.stdout.take().unwrap();
@@ -78,13 +95,27 @@ fn child_lock_result(path: &Path) -> String {
             }
         }
     });
-    let result = receive.recv_timeout(Duration::from_secs(10));
-    if result.is_err() {
-        let _ = child.kill();
-    }
-    let status = child.wait().unwrap();
-    assert!(status.success(), "child failed: {status}");
-    result.expect("child lock result timed out")
+    (child, receive)
+}
+
+#[test]
+fn probe_abrupt_process_exit_releases_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.lock");
+    let _file = File::create(&path).unwrap();
+    let (mut child, receive) = spawn_lock_child(&path, true);
+    assert_eq!(
+        receive.recv_timeout(Duration::from_secs(10)).unwrap(),
+        "Ok(())"
+    );
+    child.kill().unwrap();
+    assert!(!child.wait().unwrap().success());
+    let reopened = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
+    FileExt::try_lock(&reopened).expect("lock remained held after abrupt exit");
 }
 
 #[test]
@@ -168,4 +199,18 @@ fn probe_symlink_read_behavior() {
             .and_then(|file| file.metadata());
         println!("{MARKER}open_reparse_point={no_follow:?}");
     }
+}
+
+#[test]
+fn probe_open_handle_detects_replaced_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("state.json.tmp");
+    let replacement = dir.path().join("replacement.tmp");
+    fs::write(&target, b"original").unwrap();
+    fs::write(&replacement, b"other").unwrap();
+    let owned = same_file::Handle::from_file(File::open(&target).unwrap()).unwrap();
+    assert_eq!(owned, same_file::Handle::from_path(&target).unwrap());
+    fs::rename(&replacement, &target).unwrap();
+    assert_ne!(owned, same_file::Handle::from_path(&target).unwrap());
+    println!("{MARKER}open_handle_identity_detects_replacement=true");
 }

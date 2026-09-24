@@ -14,6 +14,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 fs4 = "1.1.0"
+same-file = "1.0.6"
 tempfile = "3.26.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
