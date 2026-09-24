@@ -59,7 +59,7 @@ Phase 3でCurrent Task、Quick Start、Distraction／Return、中止、手動Bre
 
 - **対象**：`apps/pomodoro-tui/tests/lifecycle.rs`、`tests/terminal.rs`、`tests/startup.rs`、必要なcore／platformテストと表示の不整合修正。
 - **変更**：Distraction申告後に終了・再起動して同じ中断をReturnで閉じ、Recovery Timeに終了中を含める一方、作業時間に含めないことを確認する。FocusとBreakのObservation Gapでは空白を加算せず手動再開を待つ。Quick Startの継続選択待ちは再起動後も選択待ちで、Focusを自動作成しない。
-- **起動と保存**：新規データでは既定設定・空履歴・Focus開始待ちを表示する。未対応または破損した保存ファイルでは起動を止め、元ファイルを上書きしない。保存失敗中に表示する集計は採用済み状態を示し、再試行成功後だけ未確定候補の値を反映する。
+- **起動と保存**：新規データでは既定設定・Focus開始待ち・ラウンド進捗0・空履歴を確認する。未対応または破損した保存ファイルでは起動を止め、元ファイルを上書きしない。保存失敗中に表示する集計は採用済み状態を示し、再試行成功後だけ未確定候補の値を反映する。
 - **テスト・完了条件**：既存の復元・PTY・不正ファイルテストを土台に、表示と保存したeventの接続で欠ける主張だけ追加する。Known／UnknownのRecovery Timeは仕様どおり区別し、Unknownを0とみなさない。PTYはキー経路と表示、注入時計と実ファイルは時間・履歴・再読込を確認する。4-1に依存し、4-2と独立に進められる。
 
 ### 4-4. 利用案内とPhase 4終了判定
@@ -79,7 +79,7 @@ Phase 3でCurrent Task、Quick Start、Distraction／Return、中止、手動Bre
 | Distraction→終了→再起動→Return | PTYの申告・再起動・Return、coreの時間テスト | 同じ中断event、Return数、終了中を含むRecovery Time、作業時間除外を再読込と表示で照合 | 4-3 |
 | Focus・BreakのObservation Gap | coreの空白判定、lifecycleの復元テスト | 空白を計時せず手動再開待ちとなることと、振り返りの作業時間を確認 | 4-3 |
 | Quick Startの選択待ちで再起動 | PTYの選択待ち復元テスト | 再起動直後の表示と保存履歴に継続先Focusがなく、明示的選択後だけ作成される | 4-3 |
-| 新規データで初回起動 | startup／lifecycleの新規作成テスト | 既定設定・Focus開始待ち・4指標0を実行ファイルから確認 | 4-3 |
+| 新規データで初回起動 | startup／lifecycleの新規作成テスト | 実行ファイルで既定設定・Focus開始待ち・ラウンド進捗0・4指標0を、保存ファイルで空履歴を確認 | 4-3 |
 | 未対応形式・破損ファイルで起動 | startup／lifecycleの拒否・保全テスト | 停止理由と元バイト列の不変を確認し、空履歴への自動初期化がない | 4-3 |
 
 ## 5. 検証方法と終了条件
