@@ -1,5 +1,7 @@
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
+mod support;
+
 use std::{
     fs,
     io::{self, BufRead, Read, Write},
@@ -167,7 +169,7 @@ impl Drop for Probe {
 
 #[test]
 fn second_process_is_rejected_and_normal_exit_releases_the_lock() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.lock_path(), b"existing lock file").unwrap();
     let inode = fs::metadata(location.lock_path()).unwrap().ino();
@@ -187,7 +189,7 @@ fn second_process_is_rejected_and_normal_exit_releases_the_lock() {
 
 #[test]
 fn abrupt_process_exit_releases_the_lock_without_deleting_its_file() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut first = Probe::spawn("lock", directory.path());
     first.expect("ACQUIRED");
@@ -199,7 +201,7 @@ fn abrupt_process_exit_releases_the_lock_without_deleting_its_file() {
 
 #[test]
 fn exec_child_does_not_keep_its_parents_lock_alive() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let probe = Probe::spawn("inheritance", directory.path());
     probe.expect("VERIFIED");
     probe.finish();
@@ -207,8 +209,8 @@ fn exec_child_does_not_keep_its_parents_lock_alive() {
 
 #[test]
 fn separate_directories_can_be_locked_concurrently() {
-    let first_directory = tempfile::tempdir().unwrap();
-    let second_directory = tempfile::tempdir().unwrap();
+    let first_directory = support::tempdir();
+    let second_directory = support::tempdir();
     let first = Probe::spawn("lock", first_directory.path());
     first.expect("ACQUIRED");
     let second = Probe::spawn("lock", second_directory.path());
@@ -219,7 +221,7 @@ fn separate_directories_can_be_locked_concurrently() {
 
 #[test]
 fn state_rename_does_not_release_the_lock_or_touch_the_backup() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), b"broken existing JSON").unwrap();
     fs::write(location.backup_path(), b"backup bytes").unwrap();
@@ -241,10 +243,10 @@ fn state_rename_does_not_release_the_lock_or_touch_the_backup() {
 
 #[test]
 fn relative_paths_and_directory_aliases_share_the_same_lock() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let first = Probe::spawn("relative", directory.path());
     first.expect("ACQUIRED");
-    let alias_parent = tempfile::tempdir().unwrap();
+    let alias_parent = support::tempdir();
     let alias = alias_parent.path().join("alias");
     symlink(directory.path(), &alias).unwrap();
     let second = Probe::spawn("lock", &alias);
@@ -255,7 +257,7 @@ fn relative_paths_and_directory_aliases_share_the_same_lock() {
 
 #[test]
 fn creates_only_the_directory_and_private_lock_file() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = StorageLocation::at(directory.path().join("nested/store"));
     assert!(!location.directory().exists());
     let lock = location.clone().lock().unwrap();
@@ -278,7 +280,7 @@ fn creates_only_the_directory_and_private_lock_file() {
 #[cfg(target_os = "linux")]
 #[test]
 fn discovery_uses_xdg_state_path_without_creating_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let probe = Probe::spawn("discover", directory.path());
     probe.expect("DISCOVERED");
     probe.finish();
@@ -287,7 +289,7 @@ fn discovery_uses_xdg_state_path_without_creating_files() {
 
 #[test]
 fn io_errors_are_distinct_from_contention_and_do_not_replace_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let not_a_directory = directory.path().join("ordinary-file");
     fs::write(&not_a_directory, b"keep").unwrap();
     let error = StorageLocation::at(not_a_directory.clone())

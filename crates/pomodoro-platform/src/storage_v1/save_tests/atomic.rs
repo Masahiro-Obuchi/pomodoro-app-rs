@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn backup_and_primary_follow_the_durable_save_order() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     let mut store = load(&location);
@@ -26,7 +26,7 @@ fn backup_and_primary_follow_the_durable_save_order() {
 #[test]
 fn every_io_failure_preserves_the_baseline_and_fixed_candidate() {
     for failing_stage in SAVE_STAGES {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         fs::write(location.state_path(), VALID).unwrap();
         fs::write(location.backup_path(), OLD_BACKUP).unwrap();
@@ -100,7 +100,7 @@ fn every_io_failure_preserves_the_baseline_and_fixed_candidate() {
 #[test]
 fn initial_save_failures_do_not_manufacture_a_committed_generation_or_backup() {
     for failing_stage in &SAVE_STAGES[5..] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut store = load(&location);
         let error = store
@@ -129,7 +129,7 @@ fn initial_save_failures_do_not_manufacture_a_committed_generation_or_backup() {
 
 #[test]
 fn storage_ancestry_is_synced_deepest_first_once_per_handle() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().join("new/nested/store"));
     let mut store = load(&location);
     let mut synced = Vec::new();
@@ -166,7 +166,7 @@ fn storage_ancestry_is_synced_deepest_first_once_per_handle() {
 
 #[test]
 fn each_ancestor_sync_failure_blocks_writes_even_after_reopening() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().join("new/store"));
     let ancestor_count = location.directory().ancestors().count();
     for failed_index in 0..ancestor_count {
@@ -199,7 +199,7 @@ fn each_ancestor_sync_failure_blocks_writes_even_after_reopening() {
 
 #[test]
 fn reopened_store_syncs_ancestors_after_an_abandoned_directory_sync_failure() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().join("new/nested/store"));
     let mut store = load(&location);
     let error = store
@@ -231,7 +231,7 @@ fn reopened_store_syncs_ancestors_after_an_abandoned_directory_sync_failure() {
 
 #[test]
 fn ancestor_sync_failure_preserves_loaded_primary_and_backup_across_reopens() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), OLD_BACKUP).unwrap();

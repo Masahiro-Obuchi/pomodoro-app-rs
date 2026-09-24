@@ -1,5 +1,7 @@
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
+mod support;
+
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -39,7 +41,7 @@ fn assert_locked(location: &StorageLocation) {
 
 #[test]
 fn empty_directory_is_new_and_does_not_create_default_state() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = location(&directory);
     let LoadOutcome::New(store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("expected new store");
@@ -57,7 +59,7 @@ fn empty_directory_is_new_and_does_not_create_default_state() {
 
 #[test]
 fn valid_primary_keeps_exact_bytes_and_metadata_under_the_lock() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = location(&directory);
     fs::write(location.state_path(), VALID).unwrap();
     let before = files(directory.path());
@@ -80,7 +82,7 @@ fn valid_primary_keeps_exact_bytes_and_metadata_under_the_lock() {
 
 #[test]
 fn loading_running_snapshot_does_not_apply_restore_or_generate_events() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = location(&directory);
     let mut value: Value = serde_json::from_slice(VALID).unwrap();
     value["id_allocators"]["next_session_id"] = json!(2);
@@ -117,7 +119,7 @@ fn loading_running_snapshot_does_not_apply_restore_or_generate_events() {
 #[test]
 fn valid_primary_wins_over_backups_and_newer_or_broken_temps() {
     for backup in [VALID, b"broken backup"] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = location(&directory);
         fs::write(location.state_path(), VALID).unwrap();
         fs::write(location.backup_path(), backup).unwrap();
@@ -152,7 +154,7 @@ fn missing_or_corrupt_primary_offers_only_the_valid_backup() {
         Some(b"{\"value\":\"\xff\"}".as_slice()),
         Some(b"{\"schema_version\":2,\"value\":\"\xff\"}".as_slice()),
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = location(&directory);
         if let Some(bytes) = primary {
             fs::write(location.state_path(), bytes).unwrap();
@@ -197,7 +199,7 @@ fn old_or_future_primary_is_not_downgraded_to_a_valid_backup() {
         (br#"[{"schema_version":1}]"#.as_slice(), None),
         (br#"{"schema_version":2}"#.as_slice(), Some(2)),
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = location(&directory);
         fs::write(location.state_path(), primary).unwrap();
         fs::write(location.backup_path(), VALID).unwrap();
@@ -227,7 +229,7 @@ fn malformed_schema_and_domain_data_never_become_new_state() {
         serde_json::to_vec(&reference).unwrap(),
         serde_json::to_vec(&allocator).unwrap(),
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = location(&directory);
         fs::write(location.state_path(), &bytes).unwrap();
         let before = files(directory.path());
@@ -248,7 +250,7 @@ fn bad_backups_preserve_both_diagnostics_without_initializing() {
             br#"{"schema_version":2}"#,
             b"{}",
         ] {
-            let directory = tempfile::tempdir().unwrap();
+            let directory = support::tempdir();
             let location = location(&directory);
             if let Some(bytes) = primary {
                 fs::write(location.state_path(), bytes).unwrap();
@@ -279,7 +281,7 @@ fn temporary_quarantined_and_unrecognized_entries_prevent_initialization() {
         "unknown-file".into(),
         OsString::from_vec(vec![0xff]),
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = support::tempdir();
         let location = location(&directory);
         let path = directory.path().join(name);
         // Even a completely valid temp is not an authorized recovery source.
@@ -299,7 +301,7 @@ fn temporary_quarantined_and_unrecognized_entries_prevent_initialization() {
 fn io_errors_and_dangling_symlinks_are_not_missing_files() {
     for backup in [false, true] {
         for is_link in [false, true] {
-            let directory = tempfile::tempdir().unwrap();
+            let directory = support::tempdir();
             let location = location(&directory);
             let path = if backup {
                 location.backup_path()
@@ -328,7 +330,7 @@ fn io_errors_and_dangling_symlinks_are_not_missing_files() {
 
 #[test]
 fn permission_denied_is_not_a_new_store_or_recovery_candidate() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = location(&directory);
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), VALID).unwrap();
@@ -350,7 +352,7 @@ fn permission_denied_is_not_a_new_store_or_recovery_candidate() {
 
 #[test]
 fn unreadable_directory_prevents_the_new_store_check() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::tempdir();
     let location = location(&directory);
     let locked = location.clone().lock().unwrap();
     fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o300)).unwrap();

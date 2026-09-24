@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn initial_retry_rejects_external_remnants_before_any_io() {
     for name in ["state.json.bak", "state.json.tmp-external", "unknown-file"] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut store = load(&location);
         store
@@ -50,7 +50,7 @@ fn uncertain_store(location: &StorageLocation) -> WritableStorage {
 
 #[test]
 fn every_retry_sync_failure_keeps_uncertainty_and_original_diagnostics() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut store = uncertain_store(&location);
     let candidate = store.pending_save().unwrap().encoded_bytes().to_vec();
@@ -93,7 +93,7 @@ fn every_retry_sync_failure_keeps_uncertainty_and_original_diagnostics() {
 
 #[test]
 fn failed_reconciliation_retains_uncertainty_until_the_baseline_is_confirmed() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut store = uncertain_store(&location);
     let candidate = store.pending_save().unwrap().encoded_bytes().to_vec();

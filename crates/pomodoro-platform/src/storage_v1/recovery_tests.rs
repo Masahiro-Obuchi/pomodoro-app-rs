@@ -59,7 +59,7 @@ fn fail(stage: SaveStage) -> impl FnMut(SaveStage, &Path) -> io::Result<()> {
 #[test]
 fn every_failure_keeps_one_restored_candidate_and_protects_backup() {
     for &stage in STAGES {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut recovery = prepare(&location, Some(BROKEN))
             .confirm(RESTORED_AT)
@@ -118,7 +118,7 @@ fn every_failure_keeps_one_restored_candidate_and_protects_backup() {
 #[test]
 fn missing_primary_retries_without_creating_an_archive() {
     for stage in [SaveStage::RenamePrimary, SaveStage::SyncPrimaryDirectory] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut recovery = prepare(&location, None).confirm(RESTORED_AT).unwrap();
         let bytes = recovery.pending_save().unwrap().encoded_bytes().to_vec();
@@ -136,7 +136,7 @@ fn missing_primary_retries_without_creating_an_archive() {
 #[test]
 fn third_primary_or_changed_backup_stops_before_writes() {
     for modify_backup in [false, true] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut recovery = prepare(&location, Some(BROKEN))
             .confirm(RESTORED_AT)
@@ -158,7 +158,7 @@ fn third_primary_or_changed_backup_stops_before_writes() {
 fn changes_after_quarantine_are_rechecked_before_replacement() {
     for modify_backup in [false, true] {
         for missing_primary in [false, true] {
-            let directory = tempfile::tempdir().unwrap();
+            let directory = crate::storage_v1::test_tempdir();
             let location = StorageLocation::at(directory.path().to_owned());
             let mut recovery = prepare(&location, (!missing_primary).then_some(BROKEN))
                 .confirm(RESTORED_AT)
@@ -195,7 +195,7 @@ fn changes_after_quarantine_are_rechecked_before_replacement() {
 #[test]
 fn unreadable_primary_cannot_be_replaced_even_after_archive() {
     for archived in [false, true] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut recovery = prepare(&location, Some(BROKEN))
             .confirm(RESTORED_AT)
@@ -224,7 +224,7 @@ fn uncertain_commit_survives_read_conflict_and_sync_errors_until_reconciled() {
         SaveStage::SyncQuarantine,
         SaveStage::SyncQuarantineDirectory,
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut recovery = prepare(&location, Some(BROKEN))
             .confirm(RESTORED_AT)
@@ -257,7 +257,7 @@ fn uncertain_commit_survives_read_conflict_and_sync_errors_until_reconciled() {
 
 #[test]
 fn old_primary_after_uncertainty_rewrites_the_same_candidate() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut recovery = prepare(&location, Some(BROKEN))
         .confirm(RESTORED_AT)
@@ -283,7 +283,7 @@ fn old_primary_after_uncertainty_rewrites_the_same_candidate() {
 #[test]
 fn changed_archive_is_preserved_and_never_authorizes_replacement() {
     for replace_inode in [false, true] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         let mut recovery = prepare(&location, Some(BROKEN))
             .confirm(RESTORED_AT)
@@ -308,7 +308,7 @@ fn changed_archive_is_preserved_and_never_authorizes_replacement() {
 
 #[test]
 fn preparation_overflow_never_changes_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let candidate = prepare(&location, Some(BROKEN));
     drop(candidate);
@@ -331,7 +331,7 @@ fn preparation_overflow_never_changes_files() {
 
 #[test]
 fn recovery_records_one_restore_even_after_many_failures() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut recovery = prepare(&location, Some(BROKEN))
         .confirm(RESTORED_AT)

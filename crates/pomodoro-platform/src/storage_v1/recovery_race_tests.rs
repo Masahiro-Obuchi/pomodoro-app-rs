@@ -22,7 +22,7 @@ fn archive_changes_during_the_same_attempt_block_primary_replacement() {
             ArchiveChange::Replace,
             ArchiveChange::Edit,
         ] {
-            let directory = tempfile::tempdir().unwrap();
+            let directory = crate::storage_v1::test_tempdir();
             let location = StorageLocation::at(directory.path().to_owned());
             let mut recovery = prepare(&location, Some(BROKEN))
                 .confirm(RESTORED_AT)
@@ -98,7 +98,7 @@ fn source_changes_during_temporary_write_block_rename_and_retain_the_candidate()
     ] {
         for modify_backup in [false, true] {
             for original in [None, Some(BROKEN)] {
-                let directory = tempfile::tempdir().unwrap();
+                let directory = crate::storage_v1::test_tempdir();
                 let location = StorageLocation::at(directory.path().to_owned());
                 let mut recovery = prepare(&location, original).confirm(RESTORED_AT).unwrap();
                 let candidate = recovery.pending_save().unwrap().encoded_bytes().to_vec();
@@ -170,7 +170,7 @@ fn changes_during_commit_reconciliation_retain_uncertainty() {
         SaveStage::SyncPrimaryDirectory,
     ] {
         for target in 0..3 {
-            let directory = tempfile::tempdir().unwrap();
+            let directory = crate::storage_v1::test_tempdir();
             let location = StorageLocation::at(directory.path().to_owned());
             let mut recovery = prepare(&location, Some(BROKEN))
                 .confirm(RESTORED_AT)

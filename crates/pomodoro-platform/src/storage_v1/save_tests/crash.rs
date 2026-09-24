@@ -101,7 +101,7 @@ fn process_stop_at_each_save_boundary_keeps_a_whole_old_or_new_primary() {
         .map(|stage| format!("{stage:?}"))
         .chain(std::iter::once("Committed".into()));
     for stage in stages {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         fs::write(location.state_path(), VALID).unwrap();
         fs::write(location.backup_path(), &prior_backup).unwrap();
@@ -143,7 +143,7 @@ fn interrupted_first_save_never_initializes_over_a_leftover_temporary_file() {
         "SyncPrimaryDirectory",
         "Committed",
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::storage_v1::test_tempdir();
         let location = StorageLocation::at(directory.path().to_owned());
         CrashChild::stop(&location, stage);
         let result = location.clone().lock().unwrap().load();

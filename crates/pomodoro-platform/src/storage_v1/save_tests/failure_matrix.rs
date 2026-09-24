@@ -26,7 +26,7 @@ fn repeated_failures_preserve_candidate_and_resume_normal_saves() {
 }
 
 fn check_attempts(initial_store: bool, initial_failure: SaveStage, retry_failure: SaveStage) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     if !initial_store {
         fs::write(location.state_path(), VALID).unwrap();

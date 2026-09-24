@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn retry_confirms_an_uncertain_candidate_without_rewriting_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), OLD_BACKUP).unwrap();
@@ -53,7 +53,7 @@ fn retry_confirms_an_uncertain_candidate_without_rewriting_files() {
 
 #[test]
 fn retry_rewrites_the_fixed_candidate_only_after_confirming_the_old_primary() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), OLD_BACKUP).unwrap();
@@ -94,7 +94,7 @@ fn retry_rewrites_the_fixed_candidate_only_after_confirming_the_old_primary() {
 
 #[test]
 fn retry_writes_an_initial_candidate_without_creating_a_backup() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     let mut store = load(&location);
     let domain = domain();
@@ -121,7 +121,7 @@ fn retry_writes_an_initial_candidate_without_creating_a_backup() {
 
 #[test]
 fn retry_rejects_a_third_primary_without_touching_the_backup_or_candidate() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), OLD_BACKUP).unwrap();
@@ -153,7 +153,7 @@ fn retry_rejects_a_third_primary_without_touching_the_backup_or_candidate() {
 
 #[test]
 fn failed_retries_keep_the_same_candidate_until_a_later_success() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     let mut store = load(&location);
@@ -192,7 +192,7 @@ fn failed_retries_keep_the_same_candidate_until_a_later_success() {
 
 #[test]
 fn retry_without_a_pending_candidate_writes_nothing() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), OLD_BACKUP).unwrap();
