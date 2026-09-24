@@ -16,7 +16,7 @@ unicode-segmentation.workspace = true
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 rustix = { workspace = true, features = ["pty", "termios", "process"] }
 
-[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dev-dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dev-dependencies]
 tempfile = "3.26.0"
 
 [lints]

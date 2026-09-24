@@ -22,15 +22,9 @@ jobs:
         run: rustup toolchain install 1.86.0 --profile minimal
       - name: Probe local filesystem
         run: cargo +1.86.0 test --locked -p pomodoro-platform --test platform_probe -- --nocapture
-      - name: Test platform crate on Windows
-        if: runner.os == 'Windows'
-        run: cargo +1.86.0 test --locked -p pomodoro-platform
-      - name: Test workspace on Unix
-        if: runner.os != 'Windows'
+      - name: Test workspace
         run: cargo +1.86.0 test --locked --workspace
-      - name: Test interrupted saves on Unix
-        if: runner.os != 'Windows'
+      - name: Test interrupted saves
         run: cargo +1.86.0 test --locked -p pomodoro-platform --lib crash_boundaries_in_isolated_process -- --ignored
-      - name: Build workspace on Unix
-        if: runner.os != 'Windows'
+      - name: Build workspace
         run: cargo +1.86.0 build --locked --workspace
