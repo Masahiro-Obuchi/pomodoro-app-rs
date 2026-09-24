@@ -1,6 +1,6 @@
 # Implementation Plan
 
-更新日：2026-09-23
+更新日：2026-09-24
 
 この文書は拡張MVPの開発順序、Phaseの目的・依存関係・完了条件、Phase単位の進捗を管理する。初期Pomodoroの旧計画を置き換える。過去の内容はGit履歴で参照できる。
 
@@ -14,7 +14,7 @@
 | 本書 | 実装順序、依存関係、到達目標、Phase単位の進捗 |
 | [Phase 2 Plan（過去資料）](archive/PHASE2_PLAN.md) | 完了したPhase 2のレビュー単位、対象、互換対応、検証と終了条件 |
 | [Phase 3 Plan（過去資料）](archive/PHASE3_PLAN.md) | 完了したPhase 3のレビュー単位、既存経路、検証と終了条件 |
-| [Phase 4 Plan](PHASE4_PLAN.md) | 振り返り表示とMVP受入のレビュー単位・検証・終了条件 |
+| [Phase 4 Plan（過去資料）](archive/PHASE4_PLAN.md) | 完了したPhase 4のレビュー単位、振り返り表示とMVP受入の検証・終了条件 |
 | コード・テスト・PR | 具体的な実装、変更点、検証の証拠 |
 
 本書には型・フィールド一覧、キー割当、全テストケース、関数やファイル単位の完了チェックを複製しない。仕様を変える場合は対応する仕様文書を先に更新し、開発順序や完了条件への影響だけを本書へ反映する。
@@ -31,7 +31,7 @@
 | 1 | 新しいドメインをコアで扱える | Phase 0 | 完了 | 純粋な遷移・計時・履歴・invariantを検証済み。Phase 1で設けた一時的なlegacy境界はPhase 2で撤去済み |
 | 2 | V1データを安全に保存・復元できる | Phase 1 | 完了 | 通常起動のV1切替とlegacy撤去を完了。全workspace、実ファイル・別プロセス、保存境界での子プロセス停止、Rust 1.86を検証。[詳細計画（過去資料）](archive/PHASE2_PLAN.md) |
 | 3 | TUIで着手・集中・復帰の一連の操作ができる | Phase 2 | 完了 | Current Task、Quick Start、Distraction／Return、中止、Break、保存失敗と復元をTUIで検証。全workspace、実ファイル・PTY、Rust 1.86を確認。[詳細計画（過去資料）](archive/PHASE3_PLAN.md) |
-| 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 進行中 | 最小限の履歴確認と一連の動作の受入検証。[詳細計画](PHASE4_PLAN.md) |
+| 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 完了 | 4指標のTUI表示とProduct Spec第10節の7例を、保存記録・再起動・画面で検証。全workspaceとRust 1.86のビルド・テストを確認。[詳細計画（過去資料）](archive/PHASE4_PLAN.md) |
 
 ## 3. Phase構成
 
@@ -89,7 +89,7 @@ Phase 2の既存操作・保存接続を基盤に、新しい作業開始・脱�
 
 詳細履歴一覧や全統計のダッシュボードは要求しないが、開発者向けのデータ検証だけで完了にしない。表示範囲の正本はProduct Specとする。
 
-レビュー単位と検証は[Phase 4 Plan](PHASE4_PLAN.md)を参照する。
+完了したレビュー単位と検証方針は[Phase 4 Plan（過去資料）](archive/PHASE4_PLAN.md)を参照する。
 
 ## 4. 各Phaseに共通する完了の判断
 
