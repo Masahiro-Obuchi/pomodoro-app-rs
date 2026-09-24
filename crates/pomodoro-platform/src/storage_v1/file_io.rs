@@ -2,46 +2,16 @@
 //! Load/save policy and commit accounting stay in their respective modules.
 
 use super::{LoadProblem, SaveError, SaveStage, StorageLocation};
-use rustix::fs::{Mode, OFlags, open};
 use std::{
     fs,
-    io::{self, Read, Write},
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    io::{self, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
-// Never use Path::exists or a blanket NotFound fallback through symlinks. A
-// dangling link is not an empty store, and a FIFO must not hang application startup.
-pub(super) fn read_optional(path: &Path) -> Result<Option<Vec<u8>>, LoadProblem> {
-    let fd = match open(
-        path,
-        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
-        Mode::empty(),
-    ) {
-        Ok(fd) => fd,
-        Err(rustix::io::Errno::NOENT) => return Ok(None),
-        Err(error) => return Err(LoadProblem::io(path, error.into())),
-    };
-    let mut file = fs::File::from(fd);
-    if !file
-        .metadata()
-        .map_err(|error| LoadProblem::io(path, error))?
-        .is_file()
-    {
-        return Err(LoadProblem::io(
-            path,
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "saved state must be a regular file",
-            ),
-        ));
-    }
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|error| LoadProblem::io(path, error))?;
-    Ok(Some(bytes))
-}
+mod native_linux;
+use native_linux::{create_new_private, owns_path};
+pub(super) use native_linux::{read_optional, sync_directory};
 
 // Inspect names only. Never parse or adopt temporary/quarantined files. This
 // directory belongs to the application: unknown entries also prevent implicit
@@ -155,15 +125,6 @@ pub(super) fn replace_file_with_check(
     result
 }
 
-pub(super) fn sync_directory(path: &Path) -> io::Result<()> {
-    let fd = open(
-        path,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-        Mode::empty(),
-    )?;
-    fs::File::from(fd).sync_all()
-}
-
 pub(super) fn at_stage<T>(
     stage: SaveStage,
     path: &Path,
@@ -201,12 +162,7 @@ impl TemporaryFile {
             let mut path = target.as_os_str().to_os_string();
             path.push(format!(".{suffix}-{}-{sequence}", std::process::id()));
             let path = PathBuf::from(path);
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&path)
-            {
+            match create_new_private(&path) {
                 Ok(file) => {
                     return Ok(Self {
                         file,
@@ -224,13 +180,7 @@ impl TemporaryFile {
     }
 
     fn owns_path(&self, path: &Path) -> io::Result<bool> {
-        let actual = match fs::symlink_metadata(path) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(error),
-        };
-        let expected = self.file.metadata()?;
-        Ok(actual.is_file() && actual.dev() == expected.dev() && actual.ino() == expected.ino())
+        owns_path(&self.file, path)
     }
 
     fn cleanup(&mut self) -> io::Result<()> {
@@ -282,15 +232,8 @@ impl QuarantinedFile {
     }
 
     pub(super) fn verify(&self, bytes: &[u8]) -> Result<(), SaveError> {
-        let expected = self
-            .file
-            .metadata()
-            .map_err(|source| SaveError::Read(LoadProblem::io(&self.path, source)))?;
-        let actual = fs::symlink_metadata(&self.path)
-            .map_err(|source| SaveError::Read(LoadProblem::io(&self.path, source)))?;
-        if !actual.is_file()
-            || actual.dev() != expected.dev()
-            || actual.ino() != expected.ino()
+        if !owns_path(&self.file, &self.path)
+            .map_err(|source| SaveError::Read(LoadProblem::io(&self.path, source)))?
             || read_optional(&self.path)
                 .map_err(SaveError::Read)?
                 .as_deref()
