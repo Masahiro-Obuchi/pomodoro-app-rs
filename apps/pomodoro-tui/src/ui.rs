@@ -157,9 +157,17 @@ fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
                 ));
             }
             if app.show_help() {
-                footer.push(Line::from(
-                    "Settings are available while ready. Paused time is not counted.",
-                ));
+                footer.push(Line::from(match app.state().snapshot().state {
+                    ProgressState::Ready { .. } => {
+                        "Settings are available while ready. Paused time is not counted."
+                    }
+                    ProgressState::Active { .. } => {
+                        "Reset keeps task and type; Skip advances; Cancel goes to Focus."
+                    }
+                    ProgressState::AwaitingQuickStartDecision { .. } => {
+                        "f: Finish; c: Continue to Focus. Settings unavailable."
+                    }
+                }));
             }
         }
     }

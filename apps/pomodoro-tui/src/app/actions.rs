@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 use pomodoro_core::{
-    Command, InterruptionKind, PomodoroState, ProgressState, QuickStartChoice, SessionKind,
-    SessionOutcome, TimerState,
+    Command, InterruptionKind, PomodoroState, ProgressState, QuickStartChoice, Session,
+    SessionKind, SessionOutcome, TimerState,
 };
 
 pub(super) enum NormalAction {
@@ -64,46 +64,7 @@ impl NormalControls {
                 }
                 bindings
             }
-            ProgressState::Active { session, timer } => {
-                let (space_hint, space_command) = match timer {
-                    TimerState::Running { .. } => ("Space: Pause", Command::Pause(session.id)),
-                    TimerState::Interrupted { interruption }
-                        if interruption.kind == InterruptionKind::Distraction =>
-                    {
-                        ("Space: Return", Command::Return(session.id))
-                    }
-                    TimerState::Interrupted { .. } => {
-                        ("Space: Resume", Command::Resume(session.id))
-                    }
-                };
-                let mut bindings = vec![
-                    Binding::command(' ', space_hint, space_command),
-                    Binding::command(
-                        'r',
-                        "r: Reset",
-                        Command::End {
-                            session_id: session.id,
-                            outcome: SessionOutcome::Reset,
-                        },
-                    ),
-                    Binding::command(
-                        'n',
-                        "n: Skip",
-                        Command::End {
-                            session_id: session.id,
-                            outcome: SessionOutcome::Skipped,
-                        },
-                    ),
-                ];
-                if session.kind.is_work() && matches!(timer, TimerState::Running { .. }) {
-                    bindings.push(Binding::command(
-                        'd',
-                        "d: Report distraction",
-                        Command::Distraction(session.id),
-                    ));
-                }
-                bindings
-            }
+            ProgressState::Active { session, timer } => active_bindings(session, timer),
             ProgressState::AwaitingQuickStartDecision {
                 quick_start_session_id,
                 ..
@@ -149,6 +110,53 @@ impl NormalControls {
     pub(super) fn hint_lines(&self) -> [String; 2] {
         [hints(&self.session), hints(&self.common)]
     }
+}
+
+fn active_bindings(session: &Session, timer: &TimerState) -> Vec<Binding> {
+    let (space_hint, space_command) = match timer {
+        TimerState::Running { .. } => ("Space: Pause", Command::Pause(session.id)),
+        TimerState::Interrupted { interruption }
+            if interruption.kind == InterruptionKind::Distraction =>
+        {
+            ("Space: Return", Command::Return(session.id))
+        }
+        TimerState::Interrupted { .. } => ("Space: Resume", Command::Resume(session.id)),
+    };
+    let mut bindings = vec![
+        Binding::command(' ', space_hint, space_command),
+        Binding::command(
+            'r',
+            "r: Reset",
+            Command::End {
+                session_id: session.id,
+                outcome: SessionOutcome::Reset,
+            },
+        ),
+        Binding::command(
+            'n',
+            "n: Skip",
+            Command::End {
+                session_id: session.id,
+                outcome: SessionOutcome::Skipped,
+            },
+        ),
+        Binding::command(
+            'x',
+            "x: Cancel",
+            Command::End {
+                session_id: session.id,
+                outcome: SessionOutcome::Cancelled,
+            },
+        ),
+    ];
+    if session.kind.is_work() && matches!(timer, TimerState::Running { .. }) {
+        bindings.push(Binding::command(
+            'd',
+            "d: Report distraction",
+            Command::Distraction(session.id),
+        ));
+    }
+    bindings
 }
 
 fn hints(bindings: &[Binding]) -> String {
