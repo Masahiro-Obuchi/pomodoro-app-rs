@@ -9,9 +9,18 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+#[cfg(unix)]
 mod native_unix;
+#[cfg(windows)]
+mod native_windows;
+#[cfg(unix)]
 use native_unix::{create_new_private, owns_path, sync_file};
+#[cfg(unix)]
 pub(super) use native_unix::{read_optional, sync_directory};
+#[cfg(windows)]
+use native_windows::{create_new_private, owns_path, sync_file};
+#[cfg(windows)]
+pub(super) use native_windows::{read_optional, sync_directory};
 
 // Inspect names only. Never parse or adopt temporary/quarantined files. This
 // directory belongs to the application: unknown entries also prevent implicit
@@ -114,7 +123,16 @@ pub(super) fn replace_file_with_check(
         };
         before(rename, target).map_err(rename_error)?;
         check()?;
-        fs::rename(path, target).map_err(rename_error)?;
+        fs::rename(path, target).map_err(|source| {
+            let error = rename_error(source);
+            // Windows can report a replacement error after changing the target.
+            // Re-read it on retry before deciding whether to write again.
+            #[cfg(windows)]
+            if matches!(kind, SaveTarget::Primary) {
+                return SaveError::CommitUncertain(Box::new(error));
+            }
+            error
+        })?;
         temporary.path = None;
         let parent = target.parent().expect("storage targets have a parent");
         at_stage(directory_sync, parent, before, || sync_directory(parent))

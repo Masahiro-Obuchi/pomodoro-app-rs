@@ -1,6 +1,18 @@
 use std::{fs, io, path::PathBuf};
 
+#[cfg(windows)]
+use fs4::{FileExt, TryLockError};
+#[cfg(unix)]
 use rustix::fs::{FlockOperation, Mode, OFlags, flock, open};
+#[cfg(windows)]
+use std::{
+    fs::OpenOptions,
+    os::windows::fs::{MetadataExt, OpenOptionsExt},
+};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ, FILE_SHARE_WRITE,
+};
 
 use super::{StorageLocation, StorageLockError};
 
@@ -53,18 +65,10 @@ impl StorageLocation {
             .collect();
         let location = Self::at(canonical);
         let path = location.lock_path();
-        // CLOEXEC is set atomically with open, including for notification commands
-        // spawned by other threads. Never truncate or replace the lock file.
-        let fd = open(
-            &path,
-            OFlags::RDWR | OFlags::CREATE | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-            Mode::RUSR | Mode::WUSR,
-        )
-        .map_err(|source| StorageLockError::Io {
+        let file = open_lock_file(&path).map_err(|source| StorageLockError::Io {
             path: path.clone(),
-            source: source.into(),
+            source,
         })?;
-        let file = fs::File::from(fd);
         let metadata = file.metadata().map_err(|source| StorageLockError::Io {
             path: path.clone(),
             source,
@@ -78,20 +82,73 @@ impl StorageLocation {
                 ),
             });
         }
-        flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|source| {
-            if source == rustix::io::Errno::WOULDBLOCK {
-                StorageLockError::InUse { path: path.clone() }
-            } else {
-                StorageLockError::Io {
-                    path: path.clone(),
-                    source: source.into(),
-                }
-            }
-        })?;
+        lock_file(&file, &path)?;
         Ok(LockedStorage {
             location,
             _lock: file,
             directories_to_sync,
         })
+    }
+}
+
+#[cfg(unix)]
+fn open_lock_file(path: &std::path::Path) -> io::Result<fs::File> {
+    // CLOEXEC is atomic with open, including for child processes started by
+    // another thread. Never truncate or replace this dedicated lock file.
+    let fd = open(
+        path,
+        OFlags::RDWR | OFlags::CREATE | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::RUSR | Mode::WUSR,
+    )?;
+    Ok(fs::File::from(fd))
+}
+
+#[cfg(unix)]
+fn lock_file(file: &fs::File, path: &std::path::Path) -> Result<(), StorageLockError> {
+    flock(file, FlockOperation::NonBlockingLockExclusive).map_err(|source| {
+        if source == rustix::io::Errno::WOULDBLOCK {
+            StorageLockError::InUse {
+                path: path.to_owned(),
+            }
+        } else {
+            StorageLockError::Io {
+                path: path.to_owned(),
+                source: source.into(),
+            }
+        }
+    })
+}
+
+#[cfg(windows)]
+fn open_lock_file(path: &std::path::Path) -> io::Result<fs::File> {
+    // Keep the lock pathname stable while the handle is live. Other instances
+    // may open it but cannot replace it; the kernel lock serializes access.
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "storage lock must not be a reparse point",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn lock_file(file: &fs::File, path: &std::path::Path) -> Result<(), StorageLockError> {
+    match FileExt::try_lock(file) {
+        Ok(()) => Ok(()),
+        Err(TryLockError::WouldBlock) => Err(StorageLockError::InUse {
+            path: path.to_owned(),
+        }),
+        Err(TryLockError::Error(source)) => Err(StorageLockError::Io {
+            path: path.to_owned(),
+            source,
+        }),
     }
 }
