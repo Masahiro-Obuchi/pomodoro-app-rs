@@ -13,6 +13,7 @@ fn has(screen: &str, phrase: &str) -> bool {
 fn narrow_screen_shows_state_specific_controls_and_save_failure_choices() {
     let mut h = harness(ready(), 0);
     let ready = render(&h.app, 30, 25);
+    assert!(has(&ready, "History"), "{ready}");
     for phrase in [
         "Space: Start",
         "t: Edit task",
@@ -85,18 +86,18 @@ fn narrow_quick_start_decision_shows_choices_and_completion() {
 }
 
 #[test]
-fn short_terminal_keeps_operation_and_save_recovery_controls_visible() {
-    for width in [30, 24] {
+fn tight_terminal_keeps_operation_and_save_recovery_controls_visible() {
+    for (width, height) in [(30, 17), (24, 17), (24, 20)] {
         let mut h = harness(ready(), 0);
         press(&mut h.app, '2');
-        let running = render(&h.app, width, 17);
+        let running = render(&h.app, width, height);
         for phrase in ["Space: Pause", "d: Report distraction", "x: Cancel"] {
             assert!(has(&running, phrase), "missing {phrase}: {running}");
         }
         h.at.set(100);
         h.failures.set(1);
         press(&mut h.app, 'd');
-        let blocked = render(&h.app, width, 17);
+        let blocked = render(&h.app, width, height);
         for phrase in [
             "r: Retry save",
             "Q: Confirm unsaved exit",
@@ -104,8 +105,12 @@ fn short_terminal_keeps_operation_and_save_recovery_controls_visible() {
         ] {
             assert!(has(&blocked, phrase), "missing {phrase}: {blocked}");
         }
+        if (width, height) == (24, 20) {
+            assert!(!has(&blocked, "History"), "{blocked}");
+            assert!(has(&blocked, "state.json"), "{blocked}");
+        }
         press(&mut h.app, 'Q');
-        let confirming = render(&h.app, width, 17);
+        let confirming = render(&h.app, width, height);
         assert!(has(&confirming, "y: Exit unsaved"), "{confirming}");
     }
 }

@@ -10,7 +10,7 @@ chrono.workspace = true
 crossterm.workspace = true
 pomodoro-core = { path = "../../crates/pomodoro-core" }
 pomodoro-platform = { path = "../../crates/pomodoro-platform" }
-ratatui.workspace = true
+ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 unicode-segmentation.workspace = true
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]

@@ -54,25 +54,34 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     app: &App<S, C, N>,
 ) {
     let area = centered(frame.area(), 82, 25);
-    let compact = area.height < 20;
-    let sections = Layout::vertical(if compact {
-        [
+    let full_sections = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(4),
+        Constraint::Min(6),
+    ])
+    .split(area);
+    let full_footer_rows = full_sections[4].height.saturating_sub(2);
+    let full_footer_width = full_sections[4].width.saturating_sub(2);
+    let needed_footer_rows = Paragraph::new(footer_lines(app, false))
+        .wrap(Wrap { trim: false })
+        .line_count(full_footer_width);
+    let compact = area.height < 20
+        || full_footer_width == 0
+        || needed_footer_rows > usize::from(full_footer_rows);
+    let sections = if compact {
+        Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(0),
             Constraint::Length(0),
             Constraint::Min(0),
-        ]
+        ])
+        .split(area)
     } else {
-        [
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(4),
-            Constraint::Min(6),
-        ]
-    })
-    .split(area);
+        full_sections
+    };
     let snapshot = app.state().snapshot();
     let (kind, status, remaining_ms, total_ms, task) = timer_view(snapshot);
     let title = if app.pending_state().is_some() {
