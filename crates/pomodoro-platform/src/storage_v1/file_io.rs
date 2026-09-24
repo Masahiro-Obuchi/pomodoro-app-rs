@@ -9,9 +9,9 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-mod native_linux;
-use native_linux::{create_new_private, owns_path};
-pub(super) use native_linux::{read_optional, sync_directory};
+mod native_unix;
+use native_unix::{create_new_private, owns_path, sync_file};
+pub(super) use native_unix::{read_optional, sync_directory};
 
 // Inspect names only. Never parse or adopt temporary/quarantined files. This
 // directory belongs to the application: unknown entries also prevent implicit
@@ -106,7 +106,7 @@ pub(super) fn replace_file_with_check(
             .as_ref()
             .expect("temporary has not been renamed");
         at_stage(write, path, before, || temporary.file.write_all(bytes))?;
-        at_stage(sync, path, before, || temporary.file.sync_all())?;
+        at_stage(sync, path, before, || sync_file(&temporary.file))?;
         let rename_error = |source| SaveError::Io {
             stage: rename,
             path: target.to_owned(),
@@ -251,7 +251,7 @@ impl QuarantinedFile {
         before: &mut impl FnMut(SaveStage, &Path) -> io::Result<()>,
     ) -> Result<(), SaveError> {
         at_stage(SaveStage::SyncQuarantine, &self.path, before, || {
-            self.file.sync_all()
+            sync_file(&self.file)
         })?;
         let parent = self.path.parent().expect("quarantine has a parent");
         at_stage(SaveStage::SyncQuarantineDirectory, parent, before, || {

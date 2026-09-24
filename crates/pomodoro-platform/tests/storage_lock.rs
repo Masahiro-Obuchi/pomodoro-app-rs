@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "macos"))]
 
 use std::{
     fs,
@@ -275,6 +275,7 @@ fn creates_only_the_directory_and_private_lock_file() {
     assert!(location.lock_path().exists());
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn discovery_uses_xdg_state_path_without_creating_files() {
     let directory = tempfile::tempdir().unwrap();

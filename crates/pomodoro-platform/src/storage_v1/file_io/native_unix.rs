@@ -1,4 +1,4 @@
-//! Linux file operations used by the V1 load/save policy.
+//! Unix file operations used by the V1 load/save policy.
 
 use std::{
     fs::{self, File, OpenOptions},
@@ -49,7 +49,19 @@ pub(crate) fn sync_directory(path: &Path) -> io::Result<()> {
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
         Mode::empty(),
     )?;
-    File::from(fd).sync_all()
+    sync_file(&File::from(fd))
+}
+
+pub(super) fn sync_file(file: &File) -> io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        // fsync alone does not request a flush of the drive's volatile cache.
+        rustix::fs::fcntl_fullfsync(file).map_err(Into::into)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        file.sync_all()
+    }
 }
 
 pub(super) fn create_new_private(path: &Path) -> io::Result<File> {
