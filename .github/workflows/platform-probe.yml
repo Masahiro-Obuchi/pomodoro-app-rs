@@ -1,0 +1,21 @@
+name: Native filesystem probe
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/platform-probe.yml
+      - crates/pomodoro-platform/**
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install minimum Rust toolchain
+        run: rustup toolchain install 1.86.0 --profile minimal
+      - name: Probe local filesystem
+        run: cargo +1.86.0 test -p pomodoro-platform --test platform_probe -- --nocapture
