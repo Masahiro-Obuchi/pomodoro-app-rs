@@ -6,6 +6,10 @@ use pomodoro_core::SessionKind;
 #[cfg(windows)]
 use tauri_winrt_notification::Toast;
 
+#[cfg(target_os = "macos")]
+const APPLESCRIPT: &str =
+    "on run(argv)\n display notification (item 1 of argv) with title (item 2 of argv)\nend run";
+
 /// Sends completion notices through the desktop facility of the current OS.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DesktopNotifier;
@@ -31,13 +35,7 @@ impl DesktopNotifier {
         {
             // Pass copy as argv, not interpolated AppleScript source.
             let status = Command::new("/usr/bin/osascript")
-                .args([
-                    "-e",
-                    "on run argv\n display notification (item 1 of argv) with title (item 2 of argv)\nend run",
-                    "--",
-                    content.body,
-                    content.summary,
-                ])
+                .args(["-e", APPLESCRIPT, "--", content.body, content.summary])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
@@ -119,6 +117,20 @@ impl Error for NotificationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_notification_script_compiles_without_sending() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("notification.scpt");
+        let status = Command::new("/usr/bin/osacompile")
+            .arg("-o")
+            .arg(output)
+            .args(["-e", APPLESCRIPT])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
 
     #[test]
     fn english_notification_copy_covers_every_session_kind() {
