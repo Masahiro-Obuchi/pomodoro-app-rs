@@ -111,6 +111,17 @@ impl StorageLocation {
 
 #[cfg(windows)]
 fn create_dir_all_tracked(path: &std::path::Path, created: &mut Vec<PathBuf>) -> io::Result<()> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => return Ok(()),
+        Ok(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "storage path is not a directory",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
     match fs::create_dir(path) {
         Ok(()) => {
             created.push(path.to_owned());

@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/platform-probe.yml
       - crates/pomodoro-platform/**
+      - crates/pomodoro-winfs/**
       - apps/pomodoro-tui/**
       - Cargo.toml
       - Cargo.lock
