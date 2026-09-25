@@ -1452,7 +1452,7 @@ fn deterministic_mixed_operations_preserve_invariants_and_atomic_rejection() {
         let mut random = seed;
         let mut state = DomainState::new(TimerConfig::new(1, 1, 1, 2).unwrap()).unwrap();
         let mut at = 1_000_u64;
-        for _ in 0..400 {
+        for operation in 0..400 {
             random = random
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1);
@@ -1462,14 +1462,17 @@ fn deterministic_mixed_operations_preserve_invariants_and_atomic_rejection() {
                 1 => at + 60_000,
                 _ => at + 250,
             };
+            let observation = Observation {
+                previous_at: Timestamp(previous_at),
+                at: Timestamp(at),
+                monotonic_elapsed_ms: Some(250),
+            };
             state
-                .observe(Observation {
-                    previous_at: Timestamp(previous_at),
-                    at: Timestamp(at),
-                    monotonic_elapsed_ms: Some(250),
-                })
-                .unwrap();
-            state.validate().unwrap();
+                .observe(observation)
+                .unwrap_or_else(|error| panic!("seed={seed} operation={operation} previous_at={previous_at} at={at} observation={observation:?}: {error:?}"));
+            state.validate().unwrap_or_else(|error| {
+                panic!("seed={seed} operation={operation} at={at} after observation: {error:?}")
+            });
             let id = match &state.snapshot().state {
                 ProgressState::Active { session, .. } => session.id,
                 ProgressState::AwaitingQuickStartDecision {
@@ -1515,10 +1518,14 @@ fn deterministic_mixed_operations_preserve_invariants_and_atomic_rejection() {
                 _ => Command::Configure(TimerConfig::new(1, 1, 1, 2).unwrap()),
             };
             let before = state.clone();
-            if state.apply(command, Timestamp(at)).is_err() {
-                assert_eq!(state, before);
+            let result = state.apply(command.clone(), Timestamp(at));
+            if result.is_err() {
+                assert_eq!(
+                    state, before,
+                    "seed={seed} operation={operation} at={at} command={command:?} rejection={result:?}"
+                );
             }
-            state.validate().unwrap();
+            state.validate().unwrap_or_else(|error| panic!("seed={seed} operation={operation} at={at} command={command:?} result={result:?}: {error:?}"));
         }
     }
 }
