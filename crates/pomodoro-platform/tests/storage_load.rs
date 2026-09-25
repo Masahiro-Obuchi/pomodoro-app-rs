@@ -1,13 +1,13 @@
-#![cfg(any(target_os = "linux", target_os = "macos"))]
+#![cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 
 mod support;
 
+use std::{collections::BTreeMap, ffi::OsString, fs, path::Path};
+
+#[cfg(unix)]
 use std::{
-    collections::BTreeMap,
-    ffi::OsString,
-    fs, io,
+    io,
     os::unix::fs::{PermissionsExt, symlink},
-    path::Path,
 };
 
 use pomodoro_core::{DomainState, ProgressState, TimerConfig, TimerState, Timestamp};
@@ -305,6 +305,7 @@ fn temporary_quarantined_and_unrecognized_entries_prevent_initialization() {
 }
 
 #[test]
+#[cfg(unix)]
 fn io_errors_and_dangling_symlinks_are_not_missing_files() {
     for backup in [false, true] {
         for is_link in [false, true] {
@@ -336,6 +337,7 @@ fn io_errors_and_dangling_symlinks_are_not_missing_files() {
 }
 
 #[test]
+#[cfg(unix)]
 fn permission_denied_is_not_a_new_store_or_recovery_candidate() {
     let directory = support::tempdir();
     let location = location(&directory);
@@ -358,6 +360,7 @@ fn permission_denied_is_not_a_new_store_or_recovery_candidate() {
 }
 
 #[test]
+#[cfg(unix)]
 fn unreadable_directory_prevents_the_new_store_check() {
     let directory = support::tempdir();
     let location = location(&directory);

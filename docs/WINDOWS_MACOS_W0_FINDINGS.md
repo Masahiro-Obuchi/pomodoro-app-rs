@@ -28,7 +28,7 @@ Windowsのディレクトリ同期では `OpenOptionsExt::custom_flags(FILE_FLAG
 | --- | --- | --- |
 | 実端末の対象 OS・端末バージョン | CI runner の OS ラベルと CPU アーキテクチャのみ。Windows Terminal、PowerShell、Terminal.app のバージョンは未確認 | W5。実端末受入の開始前に組合せを固定し、結果と README に記録する |
 | macOS/Windows の通知方式 | `notify-rust` は候補。Rust 1.86 での adapter ビルド、実表示、権限拒否時の動作は未確認 | W4。方式を選定し、実装と検証結果を記録する |
-| 保存 API の残る境界 | 子プロセスへのロック継承、リンク・reparse point を対象にした置換、一時ファイルの安全な削除、通常ユーザーの権限・読込エラーは未確認 | W2/W3。OS ごとの保存・復旧実装と失敗注入で確認する。TUI のエラー表示は W4 で確認する |
+| 保存 API の残る境界 | 子プロセスへのロック継承、リンク・reparse point を対象にした置換、一時ファイルの安全な削除、通常ユーザーの権限・読込エラーは未確認 | W2/W3でOSごとの保存・復旧実装と失敗注入を確認する。Windows 11通常ユーザーの権限はW5の実端末受入で確認する。TUIのエラー表示はW4で確認する |
 
 ## 実装時に採る境界
 
@@ -49,5 +49,5 @@ Windowsのディレクトリハンドルを開く方法は[Microsoft のディ�
 
 - W1：保存先の解決を共通化し、Linux 固有のファイル操作を V1 保存処理から分離する。保存 policy と TUI/controller は W2/W3 まで Linux 限定とし、既存の保存・復旧・失敗注入テストを維持する。
 - W2：macOS のロック、`NOFOLLOW` 読込、ファイル・ディレクトリ同期、通常保存・復旧を実ファイルと別プロセスで検証する。
-- W3：Windows 11 の通常ユーザーとローカル保存先で、ディレクトリ・祖先の同期、reparse point の拒否、同一性、置換失敗・確定不明、復旧を検証する。CI の Windows Server runner だけで完了にしない。
+- W3：Windows ServerのCI runnerで、ディレクトリ・祖先の同期、reparse pointの拒否、同一性、置換失敗・確定不明、復旧を実装・検証する。Windows 11の通常ユーザーとローカル保存先での権限・同期の確認はW5の実端末受入へ移し、CI runnerの成功だけでOS全体の対応完了とはしない。
 - W4：macOS/Windows の通知 adapter を Rust 1.86 でビルドし、保存成功後だけ通知することと実端末での表示を確認する。

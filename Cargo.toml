@@ -4,6 +4,7 @@ members = [
     "apps/pomodoro-tui",
     "crates/pomodoro-core",
     "crates/pomodoro-platform",
+    "crates/pomodoro-winfs",
 ]
 
 [workspace.package]

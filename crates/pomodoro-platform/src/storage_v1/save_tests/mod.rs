@@ -38,4 +38,7 @@ mod crash;
 mod failure_matrix;
 mod regression;
 mod retry;
+#[cfg(unix)]
 mod temporary_files;
+#[cfg(windows)]
+mod windows;

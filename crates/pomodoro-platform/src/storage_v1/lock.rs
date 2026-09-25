@@ -1,6 +1,18 @@
 use std::{fs, io, path::PathBuf};
 
+#[cfg(windows)]
+use fs4::{FileExt, TryLockError};
+#[cfg(unix)]
 use rustix::fs::{FlockOperation, Mode, OFlags, flock, open};
+#[cfg(windows)]
+use std::{
+    fs::OpenOptions,
+    os::windows::fs::{MetadataExt, OpenOptionsExt},
+};
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ, FILE_SHARE_WRITE,
+};
 
 use super::{StorageLocation, StorageLockError};
 
@@ -13,9 +25,11 @@ use super::{StorageLocation, StorageLockError};
 pub struct LockedStorage {
     location: StorageLocation,
     _lock: fs::File,
-    // The full canonical ancestry, deepest first, for every new handle. Existing
-    // entries may belong to an earlier process whose directory sync failed.
-    // Atomic save clears this only after a successful durable commit.
+    // Directories requiring a first-save sync, deepest first. Unix syncs the
+    // full ancestry. Windows syncs the storage directory and the parents of
+    // directories created by this lock call, avoiding write access to an
+    // unrelated pre-existing drive root or user-profile ancestor.
+    // Atomic save clears this only after a successful commit.
     pub(super) directories_to_sync: Vec<PathBuf>,
 }
 
@@ -36,6 +50,16 @@ impl StorageLocation {
     /// [`StorageLockError::Io`] if the directory/lock file cannot be accessed.
     pub fn lock(self) -> Result<LockedStorage, StorageLockError> {
         let directory = self.directory();
+        #[cfg(windows)]
+        let mut created_directories = Vec::new();
+        #[cfg(windows)]
+        create_dir_all_tracked(directory, &mut created_directories).map_err(|source| {
+            StorageLockError::Io {
+                path: directory.to_owned(),
+                source,
+            }
+        })?;
+        #[cfg(unix)]
         fs::create_dir_all(directory).map_err(|source| StorageLockError::Io {
             path: directory.to_owned(),
             source,
@@ -44,27 +68,25 @@ impl StorageLocation {
             path: directory.to_owned(),
             source,
         })?;
+        #[cfg(unix)]
         // No durable marker identifies where a previous process stopped creating
-        // or syncing directories. Reconstruct the entire chain on each open,
-        // including parents which already existed before this invocation.
+        // or syncing directories. Reconstruct the entire chain on each open.
         let directories_to_sync = canonical
             .ancestors()
             .map(std::path::Path::to_owned)
             .collect();
+        #[cfg(windows)]
+        let directories_to_sync = windows_directories_to_sync(&canonical, &created_directories)
+            .map_err(|source| StorageLockError::Io {
+                path: directory.to_owned(),
+                source,
+            })?;
         let location = Self::at(canonical);
         let path = location.lock_path();
-        // CLOEXEC is set atomically with open, including for notification commands
-        // spawned by other threads. Never truncate or replace the lock file.
-        let fd = open(
-            &path,
-            OFlags::RDWR | OFlags::CREATE | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-            Mode::RUSR | Mode::WUSR,
-        )
-        .map_err(|source| StorageLockError::Io {
+        let file = open_lock_file(&path).map_err(|source| StorageLockError::Io {
             path: path.clone(),
-            source: source.into(),
+            source,
         })?;
-        let file = fs::File::from(fd);
         let metadata = file.metadata().map_err(|source| StorageLockError::Io {
             path: path.clone(),
             source,
@@ -78,20 +100,128 @@ impl StorageLocation {
                 ),
             });
         }
-        flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|source| {
-            if source == rustix::io::Errno::WOULDBLOCK {
-                StorageLockError::InUse { path: path.clone() }
-            } else {
-                StorageLockError::Io {
-                    path: path.clone(),
-                    source: source.into(),
-                }
-            }
-        })?;
+        lock_file(&file, &path)?;
         Ok(LockedStorage {
             location,
             _lock: file,
             directories_to_sync,
         })
+    }
+}
+
+#[cfg(windows)]
+fn create_dir_all_tracked(path: &std::path::Path, created: &mut Vec<PathBuf>) -> io::Result<()> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => return Ok(()),
+        Ok(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "storage path is not a directory",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    match fs::create_dir(path) {
+        Ok(()) => {
+            created.push(path.to_owned());
+            Ok(())
+        }
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            if fs::metadata(path)?.is_dir() {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let parent = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty());
+            let Some(parent) = parent else {
+                return Err(error);
+            };
+            create_dir_all_tracked(parent, created)?;
+            create_dir_all_tracked(path, created)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(windows)]
+fn windows_directories_to_sync(
+    canonical: &std::path::Path,
+    created: &[PathBuf],
+) -> io::Result<Vec<PathBuf>> {
+    let mut directories = vec![canonical.to_owned()];
+    for path in created.iter().rev() {
+        let parent = path.parent().expect("created directory has a parent");
+        let parent = fs::canonicalize(parent)?;
+        if !directories.contains(&parent) {
+            directories.push(parent);
+        }
+    }
+    Ok(directories)
+}
+
+#[cfg(unix)]
+fn open_lock_file(path: &std::path::Path) -> io::Result<fs::File> {
+    // CLOEXEC is atomic with open, including for child processes started by
+    // another thread. Never truncate or replace this dedicated lock file.
+    let fd = open(
+        path,
+        OFlags::RDWR | OFlags::CREATE | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::RUSR | Mode::WUSR,
+    )?;
+    Ok(fs::File::from(fd))
+}
+
+#[cfg(unix)]
+fn lock_file(file: &fs::File, path: &std::path::Path) -> Result<(), StorageLockError> {
+    flock(file, FlockOperation::NonBlockingLockExclusive).map_err(|source| {
+        if source == rustix::io::Errno::WOULDBLOCK {
+            StorageLockError::InUse {
+                path: path.to_owned(),
+            }
+        } else {
+            StorageLockError::Io {
+                path: path.to_owned(),
+                source: source.into(),
+            }
+        }
+    })
+}
+
+#[cfg(windows)]
+fn open_lock_file(path: &std::path::Path) -> io::Result<fs::File> {
+    // Keep the lock pathname stable while the handle is live. Other instances
+    // may open it but cannot replace it; the kernel lock serializes access.
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "storage lock must not be a reparse point",
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn lock_file(file: &fs::File, path: &std::path::Path) -> Result<(), StorageLockError> {
+    match FileExt::try_lock(file) {
+        Ok(()) => Ok(()),
+        Err(TryLockError::WouldBlock) => Err(StorageLockError::InUse {
+            path: path.to_owned(),
+        }),
+        Err(TryLockError::Error(source)) => Err(StorageLockError::Io {
+            path: path.to_owned(),
+            source,
+        }),
     }
 }

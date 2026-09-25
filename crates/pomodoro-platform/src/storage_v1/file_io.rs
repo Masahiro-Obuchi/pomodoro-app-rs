@@ -9,9 +9,18 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+#[cfg(unix)]
 mod native_unix;
+#[cfg(windows)]
+mod native_windows;
+#[cfg(unix)]
 use native_unix::{create_new_private, owns_path, sync_file};
+#[cfg(unix)]
 pub(super) use native_unix::{read_optional, sync_directory};
+#[cfg(windows)]
+use native_windows::{create_new_private, owns_path, sync_file};
+#[cfg(windows)]
+pub(super) use native_windows::{read_optional, sync_directory};
 
 // Inspect names only. Never parse or adopt temporary/quarantined files. This
 // directory belongs to the application: unknown entries also prevent implicit
@@ -114,7 +123,16 @@ pub(super) fn replace_file_with_check(
         };
         before(rename, target).map_err(rename_error)?;
         check()?;
-        fs::rename(path, target).map_err(rename_error)?;
+        fs::rename(path, target).map_err(|source| {
+            let error = rename_error(source);
+            // Windows can report a replacement error after changing the target.
+            // Re-read it on retry before deciding whether to write again.
+            #[cfg(windows)]
+            if matches!(kind, SaveTarget::Primary) {
+                return SaveError::CommitUncertain(Box::new(error));
+            }
+            error
+        })?;
         temporary.path = None;
         let parent = target.parent().expect("storage targets have a parent");
         at_stage(directory_sync, parent, before, || sync_directory(parent))
@@ -264,5 +282,48 @@ impl Drop for TemporaryFile {
     fn drop(&mut self) {
         // Never delete a replacement file merely because its name matches.
         let _ = self.cleanup();
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use std::os::windows::fs::symlink_file;
+
+    #[test]
+    fn cleanup_never_deletes_a_replaced_temporary_path() {
+        for link in [false, true] {
+            let directory = crate::storage_v1::test_tempdir();
+            let target = directory.path().join("state.json");
+            let mut temporary = TemporaryFile::create(&target).unwrap();
+            temporary.file.write_all(b"owned temporary").unwrap();
+            let path = temporary.path.clone().unwrap();
+            fs::remove_file(&path).unwrap();
+            let external = directory.path().join("external");
+            fs::write(&external, b"external data").unwrap();
+            if link {
+                symlink_file(&external, &path).unwrap();
+            } else {
+                fs::write(&path, b"external data").unwrap();
+            }
+            temporary.cleanup().unwrap();
+            assert_eq!(fs::read(&path).unwrap(), b"external data");
+            assert_eq!(fs::symlink_metadata(&path).unwrap().is_symlink(), link);
+        }
+    }
+
+    #[test]
+    fn cleanup_keeps_a_distinct_file_with_identical_bytes() {
+        let directory = crate::storage_v1::test_tempdir();
+        let target = directory.path().join("state.json");
+        let mut temporary = TemporaryFile::create(&target).unwrap();
+        temporary.file.write_all(b"same bytes").unwrap();
+        let path = temporary.path.clone().unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::write(&path, b"same bytes").unwrap();
+
+        assert!(!temporary.owns_path(&path).unwrap());
+        temporary.cleanup().unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"same bytes");
     }
 }

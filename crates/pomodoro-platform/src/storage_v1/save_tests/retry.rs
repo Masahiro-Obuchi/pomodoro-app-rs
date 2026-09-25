@@ -74,13 +74,13 @@ fn retry_rewrites_the_fixed_candidate_only_after_confirming_the_old_primary() {
     assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
 
     let mut stages = Vec::new();
+    let ancestry_count = store.locked.directories_to_sync.len();
     store
         .retry_pending_with_hook(&mut |stage, _| {
             stages.push(stage);
             Ok(())
         })
         .unwrap();
-    let ancestry_count = location.directory().ancestors().count();
     assert_eq!(
         &stages[..ancestry_count],
         vec![SaveStage::SyncStorageAncestry; ancestry_count]
