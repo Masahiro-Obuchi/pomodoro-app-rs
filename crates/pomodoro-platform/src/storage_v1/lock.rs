@@ -25,9 +25,11 @@ use super::{StorageLocation, StorageLockError};
 pub struct LockedStorage {
     location: StorageLocation,
     _lock: fs::File,
-    // The full canonical ancestry, deepest first, for every new handle. Existing
-    // entries may belong to an earlier process whose directory sync failed.
-    // Atomic save clears this only after a successful durable commit.
+    // Directories requiring a first-save sync, deepest first. Unix syncs the
+    // full ancestry. Windows syncs the storage directory and the parents of
+    // directories created by this lock call, avoiding write access to an
+    // unrelated pre-existing drive root or user-profile ancestor.
+    // Atomic save clears this only after a successful commit.
     pub(super) directories_to_sync: Vec<PathBuf>,
 }
 
@@ -48,6 +50,16 @@ impl StorageLocation {
     /// [`StorageLockError::Io`] if the directory/lock file cannot be accessed.
     pub fn lock(self) -> Result<LockedStorage, StorageLockError> {
         let directory = self.directory();
+        #[cfg(windows)]
+        let mut created_directories = Vec::new();
+        #[cfg(windows)]
+        create_dir_all_tracked(directory, &mut created_directories).map_err(|source| {
+            StorageLockError::Io {
+                path: directory.to_owned(),
+                source,
+            }
+        })?;
+        #[cfg(unix)]
         fs::create_dir_all(directory).map_err(|source| StorageLockError::Io {
             path: directory.to_owned(),
             source,
@@ -56,13 +68,19 @@ impl StorageLocation {
             path: directory.to_owned(),
             source,
         })?;
+        #[cfg(unix)]
         // No durable marker identifies where a previous process stopped creating
-        // or syncing directories. Reconstruct the entire chain on each open,
-        // including parents which already existed before this invocation.
+        // or syncing directories. Reconstruct the entire chain on each open.
         let directories_to_sync = canonical
             .ancestors()
             .map(std::path::Path::to_owned)
             .collect();
+        #[cfg(windows)]
+        let directories_to_sync = windows_directories_to_sync(&canonical, &created_directories)
+            .map_err(|source| StorageLockError::Io {
+                path: directory.to_owned(),
+                source,
+            })?;
         let location = Self::at(canonical);
         let path = location.lock_path();
         let file = open_lock_file(&path).map_err(|source| StorageLockError::Io {
@@ -89,6 +107,50 @@ impl StorageLocation {
             directories_to_sync,
         })
     }
+}
+
+#[cfg(windows)]
+fn create_dir_all_tracked(path: &std::path::Path, created: &mut Vec<PathBuf>) -> io::Result<()> {
+    match fs::create_dir(path) {
+        Ok(()) => {
+            created.push(path.to_owned());
+            Ok(())
+        }
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            if fs::metadata(path)?.is_dir() {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let parent = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty());
+            let Some(parent) = parent else {
+                return Err(error);
+            };
+            create_dir_all_tracked(parent, created)?;
+            create_dir_all_tracked(path, created)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(windows)]
+fn windows_directories_to_sync(
+    canonical: &std::path::Path,
+    created: &[PathBuf],
+) -> io::Result<Vec<PathBuf>> {
+    let mut directories = vec![canonical.to_owned()];
+    for path in created.iter().rev() {
+        let parent = path.parent().expect("created directory has a parent");
+        let parent = fs::canonicalize(parent)?;
+        if !directories.contains(&parent) {
+            directories.push(parent);
+        }
+    }
+    Ok(directories)
 }
 
 #[cfg(unix)]

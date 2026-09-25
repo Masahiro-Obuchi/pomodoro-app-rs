@@ -7,7 +7,7 @@ fn backup_and_primary_follow_the_durable_save_order() {
     fs::write(location.state_path(), VALID).unwrap();
     let mut store = load(&location);
     let mut stages = Vec::new();
-    let ancestor_count = location.directory().ancestors().count();
+    let ancestor_count = store.locked.directories_to_sync.len();
     store
         .save_with_hook(&domain(), Timestamp(2_000), &mut |stage, _| {
             stages.push(stage);
@@ -144,10 +144,13 @@ fn storage_ancestry_is_synced_deepest_first_once_per_handle() {
         })
         .unwrap();
     assert_eq!(synced.first().unwrap(), location.directory());
+    #[cfg(unix)]
     assert_eq!(
         synced.last().unwrap(),
         location.directory().ancestors().last().unwrap()
     );
+    #[cfg(windows)]
+    assert_eq!(synced.last().unwrap(), directory.path());
     assert!(synced.contains(&directory.path().to_owned()));
     for pair in synced.windows(2) {
         assert_eq!(pair[0].parent(), Some(pair[1].as_path()));
@@ -168,6 +171,7 @@ fn storage_ancestry_is_synced_deepest_first_once_per_handle() {
 }
 
 #[test]
+#[cfg(unix)]
 fn each_ancestor_sync_failure_blocks_writes_even_after_reopening() {
     let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().join("new/store"));
@@ -201,6 +205,7 @@ fn each_ancestor_sync_failure_blocks_writes_even_after_reopening() {
 }
 
 #[test]
+#[cfg(unix)]
 fn reopened_store_syncs_ancestors_after_an_abandoned_directory_sync_failure() {
     let directory = crate::storage_v1::test_tempdir();
     let location = StorageLocation::at(directory.path().join("new/nested/store"));
@@ -238,13 +243,13 @@ fn ancestor_sync_failure_preserves_loaded_primary_and_backup_across_reopens() {
     let location = StorageLocation::at(directory.path().to_owned());
     fs::write(location.state_path(), VALID).unwrap();
     fs::write(location.backup_path(), OLD_BACKUP).unwrap();
-    let root = location.directory().ancestors().last().unwrap();
     for _ in 0..2 {
         let mut store = load(&location);
+        let last_directory = store.locked.directories_to_sync.last().unwrap().clone();
         let error = store
             .save_with_hook(&domain(), Timestamp(2_000), &mut |stage, path| {
                 assert_eq!(stage, SaveStage::SyncStorageAncestry);
-                if path == root {
+                if path == last_directory {
                     Err(io::Error::other("injected final-ancestor sync failure"))
                 } else {
                     Ok(())
@@ -269,4 +274,27 @@ fn ancestor_sync_failure_preserves_loaded_primary_and_backup_across_reopens() {
     reopened.save(&domain(), Timestamp(3_000)).unwrap();
     assert_eq!(reopened.saved_state().unwrap().save_generation(), 8);
     assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
+}
+
+#[cfg(windows)]
+#[test]
+fn existing_windows_storage_does_not_require_writable_profile_ancestors() {
+    let directory = crate::storage_v1::test_tempdir();
+    let location = StorageLocation::at(directory.path().join("existing"));
+    fs::create_dir(location.directory()).unwrap();
+    let mut store = load(&location);
+    assert_eq!(
+        store.locked.directories_to_sync,
+        vec![fs::canonicalize(location.directory()).unwrap()]
+    );
+    let mut synced = Vec::new();
+    store
+        .save_with_hook(&domain(), Timestamp(2_000), &mut |stage, path| {
+            if stage == SaveStage::SyncStorageAncestry {
+                synced.push(path.to_owned());
+            }
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(synced, vec![location.directory().to_owned()]);
 }

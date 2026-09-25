@@ -54,9 +54,10 @@ fn every_retry_sync_failure_keeps_uncertainty_and_original_diagnostics() {
     let location = StorageLocation::at(directory.path().to_owned());
     let mut store = uncertain_store(&location);
     let candidate = store.pending_save().unwrap().encoded_bytes().to_vec();
-    let mut failures: Vec<_> = location
-        .directory()
-        .ancestors()
+    let mut failures: Vec<_> = store
+        .locked
+        .directories_to_sync
+        .iter()
         .map(|path| (SaveStage::SyncStorageAncestry, path.to_owned()))
         .collect();
     failures.push((
