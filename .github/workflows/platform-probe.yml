@@ -1,4 +1,4 @@
-name: Native filesystem probe
+name: Native platform validation
 
 on:
   pull_request:
@@ -7,6 +7,9 @@ on:
       - crates/pomodoro-platform/**
       - crates/pomodoro-winfs/**
       - apps/pomodoro-tui/**
+      - README.md
+      - docs/WINDOWS_MACOS_PLAN.md
+      - docs/WINDOWS_MACOS_W5_ACCEPTANCE.md
       - Cargo.toml
       - Cargo.lock
 
@@ -29,7 +32,7 @@ jobs:
         run: cargo +1.86.0 clippy --locked --workspace --all-targets -- -D warnings
       - name: Probe local filesystem
         run: cargo +1.86.0 test --locked -p pomodoro-platform --test platform_probe -- --nocapture
-      - name: Test workspace
+      - name: Test workspace including native PTY workflows
         run: cargo +1.86.0 test --locked --workspace
       - name: Test interrupted saves
         run: cargo +1.86.0 test --locked -p pomodoro-platform --lib crash_boundaries_in_isolated_process -- --ignored

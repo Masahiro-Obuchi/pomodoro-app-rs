@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-25
 
-状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)、W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)でマージ済み。W4の通知と端末復元は[PR #40](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/40)でレビュー中。実端末バージョンを固定した受入はW5に残る
+状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)、W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)、W4の通知と端末復元は[PR #40](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/40)でマージ済み。W5aのCI・疑似端末検証は[PR #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/41)で提出済み。W5bの実端末受入と対応OSの利用案内は未着手で、Windows/macOS対応完了の判定は保留
 
 この計画は完了済みの Phase 0–4 とは独立した、既存 TUI の対応 OS 拡張を扱う。進捗は本書で管理し、Phase の完了状態は変更しない。実装を始める際は、各レビュー単位を独立した commit / PR にまとめ、依存順に確認する。
 
@@ -14,12 +14,14 @@ W3のWindows保存APIとCI検証は[W3検証記録](WINDOWS_MACOS_W3_FINDINGS.md
 
 W4の通知方式と端末復元の検証範囲は[W4検証記録](WINDOWS_MACOS_W4_FINDINGS.md)に置く。CI上の動作と実端末での表示を区別する。
 
+W5aのCI結果とW5bの実端末受入の未実施項目は[W5受入記録](WINDOWS_MACOS_W5_ACCEPTANCE.md)に置く。利用できるWindows/macOS実端末がないため、対象端末の版の固定と実機での通知表示・操作確認は未開始である。W5aのレビュー・マージはW5bの完了やWindows/macOSの対応宣言を意味しない。
+
 W1では保存先の解決を共通化し、Linux固有のファイル操作をV1保存 policy から分離した。W2ではmacOS向けに、W3ではWindows向けに保存 policy とTUI/controller の Linux 限定 `cfg` を解除する。
 
 ## 1. 目標と対象
 
 - Windows と macOS のネイティブ環境で、既存 TUI を起動し、操作、保存、再起動、復旧、終了できるようにする。WSL は Windows 版の検証に数えない。
-- 初期対象は Windows x86_64、macOS Apple Silicon と Intel。Linux は既存の動作と保存先を維持する。対象 OS・端末の具体的なバージョンは W5 の実端末受入を始める前に固定し、結果とともに README に記す。CI runner の OS ラベルを実端末の検証結果と混同しない。
+- 初期対象は Windows x86_64、macOS Apple Silicon と Intel。Linux は既存の動作と保存先を維持する。対象 OS・端末の具体的なバージョンは W5b の実端末受入を始める前に固定し、結果とともに README に記す。CI runner の OS ラベルを実端末の検証結果と混同しない。
 - `pomodoro-core` の遷移、V1 JSON のフィールド・検証規則、保存候補の再試行、保存成功後の通知、キー操作と画面上の意味を維持する。既存の Linux 保存データを自動移動しない。ファイルを手動で移す場合も、V1 として厳密に検証してから読む。
 - 対象は TUI とその実行基盤。GUI、インストーラー、自動更新、クラウド同期、ネットワーク共有上の保存、Windows ARM は今回の受入範囲に含めない。
 
@@ -33,7 +35,7 @@ W1では保存先の解決を共通化し、Linux固有のファイル操作をV
 | 排他 | LinuxとmacOSは`rustix::flock`、Windowsは`fs4::try_lock`を専用`state.lock`に使用 | 各 OS で読込前から最終保存まで非ブロッキング排他し、別プロセスと異常終了を検証する |
 | 保存と復旧 | 共通のV1保存policyを使用。Linux/macOSはUnixのfile ID、Windowsは開いたハンドルの128-bit file IDと内容で一時ファイルの同一性を確認。Windowsは保存ディレクトリと今回作成したディレクトリの親を同期 | 置換の原子性、再試行、同名ファイルの差し替え、リンク、クラッシュ時の判定、同期の成否を OS ごとに確認する |
 | 通知 | W4でLinuxの`notify-send`、macOSの`osascript`、WindowsのWinRT toastを接続。実表示は未確認 | 保存成功後だけ試みる。通知失敗は保存済みの完了を取り消さない。各OSの実表示と通知元を受入で確認する |
-| テスト | W2/W3で保存・TUIの統合テストをmacOS/Windowsに拡張。端末テストは引き続きLinux PTYを使用 | OS 共通のケースを再利用し、OS 固有のケースと実端末確認を追加する |
+| テスト | W2/W3で保存・TUIの統合テストをmacOS/Windowsに拡張。W5aでLinux/macOSのPTYとWindowsのConPTYによる実行ファイルのテストを追加 | CIで検証できない実端末の表示・操作をW5bで確認する |
 
 `directories` 6.0 の `BaseDirs::state_dir()` は Linux で値を返し、Windows/macOS では値を返さない。現在の `data_local_dir()` フォールバックはそれぞれローカル AppData と `~/Library/Application Support` を指す。パスの決定と表示は検証するが、Windows のパスを XDG と呼ばない。
 
@@ -62,7 +64,8 @@ W0ではこのうち、別プロセスの排他と強制終了後の再取得、
 | W2：macOS 保存 | Unix 系の API を再利用できる部分と macOS 固有の同期・ロックを分け、保存・読込・再試行・復旧を接続 | macOS の実ファイル・別プロセステストと保存境界の失敗注入が通る |
 | W3：Windows 保存 | Windows 向けのロック、リンクを追わない読込、同一性確認、置換・同期を保存層内に実装。Linux/macOS の保存 policy は共有する | Windows の実ファイル・別プロセステストと保存境界の失敗注入が通る |
 | W4：通知と端末 | macOS/Windows の通知方式を選定・記録し、通知本文と送信時機を共通化して各 OS の adapter を追加。TUI の起動、入力、画面復元、エラー表示を検証し、必要な箇所を調整 | Rust 1.86の各OS CIでビルド・共通テストを通し、保存成功前に通知せず、通知失敗でデータを失わない。macOSの通知スクリプトを送信せずに構文検証し、Linux PTYで端末復元を確認する。実端末でしか確認できない表示・入力はW5へ明示的に引き継ぐ |
-| W5：受入、CI、利用案内 | 受入開始前に対象 OS・端末の具体的なバージョンと組合せを固定する。OS 別の統合テストと CI matrix を整備し、README に導入・実行、保存先、通知権限と失敗、対応端末、制約を記す | 固定した OS・端末のバージョン別に通知の実表示、主要キー・貼付け・リサイズ・復旧画面・画面復元を確認し、Linux / Windows / macOS の CI を記録して§6 の受入条件を満たす |
+| W5a：自動検証の準備（PR #41） | OS別の実行ファイルのPTY/ConPTY統合テストとCI matrixを整備し、隔離した保存先で操作・保存・復旧を検証する。実端末での受入手順と未確認事項を記録する | Rust 1.86のLinux・Windows・macOS Apple Silicon/IntelのCIが通り、実端末では未確認の範囲が明記される。READMEに対応済みOSを追加しない |
+| W5b：実端末受入と利用案内（後続PR） | 受入開始前に対象OS・端末の具体的なバージョンと組合せを固定する。実端末で動作を確認し、必要な不具合を修正する。READMEに確認済みの導入・実行、保存先、通知権限と失敗、対応端末、制約を記す | 固定したOS・端末のバージョン別に通知の実表示、主要キー・貼付け・リサイズ・復旧画面・画面復元を確認し、§6の受入条件を満たす |
 
 W2 と W3 は別 PR にし、それぞれの対象 OS で保存の性質を確認してから W4 に進む。W2/W3で保存 policy を各OSへ公開する際は Linux の既存の失敗注入テストを維持する。後続 PR が未着手でも、先行 PR は対応済みと誤認させる表示や文書を追加しない。
 
@@ -76,15 +79,16 @@ W2 と W3 は別 PR にし、それぞれの対象 OS で保存の性質を確�
 | バックアップ、本体置換、保存失敗と同一候補の再試行、確定不明、明示復旧 | 必須 | 必須 | 必須 |
 | シンボリックリンク / reparse point、通常ファイル以外、権限拒否、外部差し替え | 必須 | 必須 | 必須 |
 | 既存 Linux PTY の端末テスト | 必須 | 対象外 | 対象外 |
+| CI上のネイティブPTY/ConPTYでの実行ファイルの操作・保存・復旧 | 必須 | 必須 | 必須 |
 | ネイティブ端末での初回起動、操作、終了、再起動、復旧と画面復元 | 必須 | 必須 | 必須 |
 
-GitHub Actions には `ubuntu-latest`、`windows-latest`、`macos-latest` と `macos-15-intel` の job を設ける。Linux PTY テストだけを Linux に限定し、保存・controller・描画の共通テストは各 OS で動かす。CI の headless 環境では通知の実表示や端末の完全な動作は確認できないため、通知は送信 adapter のテストと実機確認を併用する。Windows は Windows Terminal 上の PowerShell、macOS は Terminal.app を最低限の実端末確認先とする。OS・端末の具体的なバージョンは W5 の受入開始前に固定する。
+GitHub Actions には `ubuntu-24.04`、`windows-2025`、`macos-15` と `macos-15-intel` の job を設ける。Linux 固有の PTY テストだけを Linux に限定し、ネイティブ PTY と保存・controller・描画の共通テストは各 OS で動かす。CI の headless 環境では通知の実表示や端末の完全な動作は確認できないため、通知は送信 adapter のテストと実機確認を併用する。Windows は Windows Terminal 上の PowerShell、macOS は Terminal.app を最低限の実端末確認先とする。OS・端末の具体的なバージョンは W5b の受入開始前に固定する。
 
 実端末では Focus と Quick Start、Current Task の Unicode 入力と貼付け、Pause / Distraction / Return、History、狭い画面での保存再試行と未保存終了、バックアップ確認、正常終了と処理可能なエラー時の raw mode と代替画面の復元を確認する。スリープや時刻変更後の観測空白も各 OS で確認し、終了中の時間が作業時間に加わらないことを保存内容と表示で照合する。
 
 ## 6. 対応完了の判定
 
-- W0 の保存契約を両 OS で満たし、W1–W5 の PR がレビュー・マージ済みである。保存の保証に変更がある場合は、仕様と利用案内を先に更新し、その変更を含む受入結果がある。
+- W0 の保存契約を両 OS で満たし、W1–W5aおよびW5bのPRがレビュー・マージ済みである。W5aだけをマージしても対応完了とはしない。保存の保証に変更がある場合は、仕様と利用案内を先に更新し、その変更を含む受入結果がある。
 - Linux の既存テストに退行がなく、Windows/macOS の実ファイル・別プロセス・失敗注入テストが通る。V1 保存値、ID、履歴、ラウンド進捗が再起動後も一致する。
 - 初回起動から一連の操作、保存失敗からの回復、明示的バックアップ復旧、正常・異常終了後の再起動をネイティブ実行ファイルで確認する。
 - 対応 OS、端末、保存先、通知の条件と残る制限が README と実際の動作で一致する。これらを満たした時点で初めて Linux 専用の案内を更新する。

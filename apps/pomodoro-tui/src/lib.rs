@@ -9,6 +9,8 @@ mod settings;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub mod startup_gate;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+pub mod terminal;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub mod ui;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod ui_history;

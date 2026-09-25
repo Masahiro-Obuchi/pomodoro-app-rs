@@ -39,7 +39,7 @@ The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, depe
 
 The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md), [Phase 3 plan](docs/archive/PHASE3_PLAN.md), and [Phase 4 plan](docs/archive/PHASE4_PLAN.md) are archived as records of their implementation. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
 
-The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate future expansion of the TUI. The current executable remains Linux-only.
+The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate expansion of the TUI. Linux remains the only fully accepted platform; Windows and macOS await real-terminal acceptance.
 
 ## Requirements
 
@@ -52,6 +52,12 @@ The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate futur
 
 ```bash
 cargo run -p pomodoro-tui
+```
+
+For an isolated development run, set `POMODORO_STATE_DIR` to a separate application directory before starting the TUI. A new directory gets its own `state.lock` when opened and `state.json` on the first successful save. The next successful save creates `state.json.bak` from that first state; an empty value is rejected. Without this variable, the normal OS storage location is used. On Linux, for example:
+
+```bash
+POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
 ```
 
 ### Controls
@@ -80,7 +86,7 @@ In the Current Task editor, type a single line and press `Enter` to save, or `Es
 
 ### Storage, recovery, and save failures
 
-State and history are stored in `pomodoro-app-rs/state.json` under the user's XDG state directory (`$XDG_STATE_HOME`, or normally `~/.local/state`). The same directory holds `state.json.bak` and `state.lock`. A second instance using that directory is rejected. The lock file remains after exit; its existence alone does not mean another instance is running.
+State and history are stored in `pomodoro-app-rs/state.json` under the user's XDG state directory (`$XDG_STATE_HOME`, or normally `~/.local/state`). The same directory holds `state.lock`; `state.json.bak` appears after a later successful save replaces the first state. A second instance using that directory is rejected. The lock file remains after exit; its existence alone does not mean another instance is running.
 
 Startup validates the entire V1 file before allowing normal operation. Old unversioned data and unsupported versions stop startup without being overwritten or automatically replaced from backup. To start fresh, stop all instances and explicitly move the old application state directory aside, or select a separate empty XDG state directory. Settings and history from the old format are not imported.
 
@@ -97,7 +103,7 @@ cargo test --workspace
 cargo test -p pomodoro-platform --lib crash_boundaries_in_isolated_process -- --ignored
 ```
 
-The crash suite runs separately so subprocess creation cannot temporarily inherit locks held by parallel unit tests. It stops children at save boundaries and checks restart behavior; it does not simulate power loss. Linux TUI integration tests use pseudoterminals to exercise the executable's real input and exit paths.
+The crash suite runs separately so subprocess creation cannot temporarily inherit locks held by parallel unit tests. It stops children at save boundaries and checks restart behavior; it does not simulate power loss. Native TUI integration tests use pseudoterminals (ConPTY on Windows) to exercise the executable's real input and exit paths. These tests do not replace real-terminal acceptance.
 
 ## License
 
