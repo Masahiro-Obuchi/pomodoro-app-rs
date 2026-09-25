@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-25
 
-状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)、W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)、W4の通知と端末復元は[PR #40](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/40)でマージ済み。W5aのCI・疑似端末検証は[PR #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/41)で提出済み。W5bの実端末受入と対応OSの利用案内は未着手で、Windows/macOS対応完了の判定は保留
+状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)、W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)、W4の通知と端末復元は[PR #40](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/40)、W5aのCI・疑似端末検証は[PR #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/41)でマージ済み。W5bの実端末受入と対応OSの利用案内は未着手で、Windows/macOS対応完了の判定は保留
 
 この計画は完了済みの Phase 0–4 とは独立した、既存 TUI の対応 OS 拡張を扱う。進捗は本書で管理し、Phase の完了状態は変更しない。実装を始める際は、各レビュー単位を独立した commit / PR にまとめ、依存順に確認する。
 
