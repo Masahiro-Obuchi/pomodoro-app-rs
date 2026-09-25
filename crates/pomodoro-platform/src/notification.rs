@@ -1,32 +1,78 @@
-use std::{error::Error, fmt, io, process::Command};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::process::{Command, Stdio};
+use std::{error::Error, fmt, io};
 
 use pomodoro_core::SessionKind;
+#[cfg(windows)]
+use tauri_winrt_notification::Toast;
 
-/// Desktop notifications delivered through Linux `notify-send`.
+/// Sends completion notices through the desktop facility of the current OS.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct NotifySendNotifier;
+pub struct DesktopNotifier;
 
-impl NotifySendNotifier {
-    /// Sends a desktop notification for a completed session.
+impl DesktopNotifier {
+    /// Sends a desktop notification for a completed, already saved session.
     ///
     /// # Errors
-    ///
-    /// Returns [`NotificationError`] if `notify-send` cannot be launched or exits
-    /// unsuccessfully.
+    /// Returns an error when the OS notification adapter rejects the request.
     pub fn session_completed(self, completed: SessionKind) -> Result<(), NotificationError> {
-        let status = Command::new("notify-send")
-            .args(notification_args(completed))
-            .status()
-            .map_err(NotificationError::Launch)?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(NotificationError::UnsuccessfulExit(status.code()))
+        let content = notification_content(completed);
+        #[cfg(target_os = "linux")]
+        {
+            let status = Command::new("notify-send")
+                .args(["--app-name", "Pomodoro", content.summary, content.body])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(NotificationError::Launch)?;
+            check_status(status)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            // Pass copy as argv, not interpolated AppleScript source.
+            let status = Command::new("/usr/bin/osascript")
+                .args([
+                    "-e",
+                    "on run argv\n display notification (item 1 of argv) with title (item 2 of argv)\nend run",
+                    "--",
+                    content.body,
+                    content.summary,
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(NotificationError::Launch)?;
+            check_status(status)
+        }
+        #[cfg(windows)]
+        {
+            // Unpackaged console executables have no registered AppUserModelID.
+            // The built-in PowerShell identity works without installing a shortcut.
+            Toast::new(Toast::POWERSHELL_APP_ID)
+                .title(content.summary)
+                .text1(content.body)
+                .show()
+                .map_err(|error| NotificationError::Backend(error.to_string()))
         }
     }
 }
 
-fn notification_args(completed: SessionKind) -> [&'static str; 4] {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn check_status(status: std::process::ExitStatus) -> Result<(), NotificationError> {
+    if status.success() {
+        Ok(())
+    } else {
+        Err(NotificationError::UnsuccessfulExit(status.code()))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NotificationContent {
+    summary: &'static str,
+    body: &'static str,
+}
+
+fn notification_content(completed: SessionKind) -> NotificationContent {
     let (summary, body) = match completed {
         SessionKind::Focus => ("Focus complete", "Take a break."),
         SessionKind::QuickStart => ("Quick Start complete", "Finish or continue to Focus."),
@@ -34,22 +80,29 @@ fn notification_args(completed: SessionKind) -> [&'static str; 4] {
             ("Break complete", "Ready for the next Focus.")
         }
     };
-    ["--app-name", "Pomodoro", summary, body]
+    NotificationContent { summary, body }
 }
 
 #[derive(Debug)]
 pub enum NotificationError {
     Launch(io::Error),
     UnsuccessfulExit(Option<i32>),
+    Backend(String),
 }
 
 impl fmt::Display for NotificationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Launch(error) => write!(formatter, "could not launch notify-send: {error}"),
-            Self::UnsuccessfulExit(code) => {
-                write!(formatter, "notify-send exited unsuccessfully: {code:?}")
+            Self::Launch(error) => {
+                write!(formatter, "could not launch desktop notification: {error}")
             }
+            Self::UnsuccessfulExit(code) => {
+                write!(
+                    formatter,
+                    "desktop notification exited unsuccessfully: {code:?}"
+                )
+            }
+            Self::Backend(error) => write!(formatter, "desktop notification failed: {error}"),
         }
     }
 }
@@ -58,7 +111,7 @@ impl Error for NotificationError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Launch(error) => Some(error),
-            Self::UnsuccessfulExit(_) => None,
+            Self::UnsuccessfulExit(_) | Self::Backend(_) => None,
         }
     }
 }
@@ -68,7 +121,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn english_notification_arguments_cover_every_session_kind() {
+    fn english_notification_copy_covers_every_session_kind() {
         for (kind, summary, body) in [
             (SessionKind::Focus, "Focus complete", "Take a break."),
             (
@@ -88,8 +141,8 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                notification_args(kind),
-                ["--app-name", "Pomodoro", summary, body],
+                notification_content(kind),
+                NotificationContent { summary, body },
                 "{kind:?}"
             );
         }

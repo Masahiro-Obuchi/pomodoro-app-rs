@@ -1,6 +1,6 @@
 use pomodoro_core::{DomainState, Observation, SessionKind, Timestamp};
 use pomodoro_platform::{
-    NotificationError, NotifySendNotifier, ObservationClock, SaveError, TimeError, WritableStorage,
+    DesktopNotifier, NotificationError, ObservationClock, SaveError, TimeError, WritableStorage,
 };
 
 /// The V1 durable-save boundary, including fixed-candidate retry. Implementations
@@ -62,7 +62,7 @@ pub trait CompletionNotifier {
     fn session_completed(&mut self, kind: SessionKind) -> Result<(), NotificationError>;
 }
 
-impl CompletionNotifier for NotifySendNotifier {
+impl CompletionNotifier for DesktopNotifier {
     fn session_completed(&mut self, kind: SessionKind) -> Result<(), NotificationError> {
         Self::session_completed(*self, kind)
     }

@@ -6,7 +6,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use pomodoro_core::TimerConfig;
-use pomodoro_platform::{NotifySendNotifier, ObservationClock, StorageLocation};
+use pomodoro_platform::{DesktopNotifier, ObservationClock, StorageLocation};
 use pomodoro_tui::{
     app::App,
     controller::{Controller, ExitOutcome, Startup},
@@ -73,7 +73,7 @@ fn run() -> Result<ExitOutcome, Box<dyn Error>> {
 
     // A fresh monotonic anchor excludes time spent on startup and recovery UI.
     let clock = ObservationClock::new()?;
-    let controller = Controller::from_saved(store, clock, NotifySendNotifier)?;
+    let controller = Controller::from_saved(store, clock, DesktopNotifier)?;
     let mut app = App::new(controller);
     while !app.should_quit() {
         app.tick();
@@ -90,7 +90,9 @@ struct TerminalGuard;
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
+        // Attempt each restoration even when a previous terminal operation fails.
+        let _ = execute!(io::stdout(), DisableBracketedPaste);
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
     }
 }
