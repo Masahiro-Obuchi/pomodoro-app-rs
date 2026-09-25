@@ -1,6 +1,7 @@
 #![cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 
 use std::{
+    fs,
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver},
@@ -13,15 +14,18 @@ use pomodoro_tui::{controller::ExitOutcome, terminal};
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 
 const TIMEOUT: Duration = Duration::from_secs(15);
+const VALID: &[u8] =
+    include_bytes!("../../../crates/pomodoro-platform/tests/fixtures/state_v1.json");
 
 #[test]
 #[ignore = "PTY subprocess helper invoked by native terminal tests"]
 fn native_terminal_probe() {
     let directory = PathBuf::from(std::env::var_os("POMODORO_TEST_STATE_DIR").unwrap());
-    assert_eq!(
-        terminal::run(StorageLocation::at(directory)).unwrap(),
-        ExitOutcome::Saved
-    );
+    let stage = directory.parent().unwrap().join("probe-stage");
+    fs::write(&stage, "entered probe").unwrap();
+    let outcome = terminal::run(StorageLocation::at(directory));
+    fs::write(stage, format!("terminal returned: {outcome:?}")).unwrap();
+    assert_eq!(outcome.unwrap(), ExitOutcome::Saved);
 }
 
 struct Tui {
@@ -30,6 +34,7 @@ struct Tui {
     writer: Box<dyn Write + Send>,
     output: Receiver<Vec<u8>>,
     received: Vec<u8>,
+    stage: PathBuf,
 }
 
 impl Tui {
@@ -71,6 +76,7 @@ impl Tui {
             writer,
             output,
             received: Vec::new(),
+            stage: directory.parent().unwrap().join("probe-stage"),
         }
     }
 
@@ -93,7 +99,11 @@ impl Tui {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.output.recv_timeout(remaining) {
                 Ok(bytes) => self.received.extend(bytes),
-                Err(error) => panic!("waiting for {phrase:?}: {error}; output: {emitted}"),
+                Err(error) => panic!(
+                    "waiting for {phrase:?}: {error}; child: {:?}; stage: {:?}; output: {emitted}",
+                    self.child.try_wait().unwrap(),
+                    fs::read_to_string(&self.stage)
+                ),
             }
         }
     }
@@ -197,4 +207,32 @@ fn native_pty_can_edit_start_resize_and_restore_saved_state() {
     tui.expect("原稿を書く");
     tui.send(b"q");
     tui.finish();
+}
+
+#[test]
+fn native_pty_requires_consent_before_recovering_a_broken_primary() {
+    let directory = tempfile::tempdir().unwrap();
+    let location = StorageLocation::at(directory.path().join("state"));
+    fs::create_dir_all(location.directory()).unwrap();
+    fs::write(location.state_path(), b"broken primary").unwrap();
+    fs::write(location.backup_path(), VALID).unwrap();
+
+    let mut tui = Tui::spawn(location.directory(), 100, 30);
+    tui.expect("may be lost");
+    assert_eq!(fs::read(location.state_path()).unwrap(), b"broken primary");
+    tui.send(b"y");
+    tui.expect("Focus");
+    tui.send(b"q");
+    tui.finish();
+
+    let LoadOutcome::Loaded(store) = location.clone().lock().unwrap().load().unwrap() else {
+        panic!("expected recovered V1 state");
+    };
+    assert_eq!(store.saved_state().unwrap().save_generation(), 8);
+    assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
+    assert!(fs::read_dir(location.directory()).unwrap().any(|entry| {
+        let entry = entry.unwrap();
+        entry.file_name().to_string_lossy().contains("quarantine")
+            && fs::read(entry.path()).unwrap() == b"broken primary"
+    }));
 }
