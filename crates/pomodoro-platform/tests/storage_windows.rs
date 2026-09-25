@@ -124,6 +124,11 @@ fn reparse_points_are_not_loaded_or_used_as_a_lock() {
     assert!(error.to_string().contains("state.json"));
     assert_eq!(fs::read(&outside).unwrap(), VALID);
     fs::remove_file(location.state_path()).unwrap();
+    let missing = directory.path().join("missing.json");
+    symlink_file(&missing, location.state_path()).unwrap();
+    let error = location.clone().lock().unwrap().load().unwrap_err();
+    assert!(error.to_string().contains("state.json"));
+    fs::remove_file(location.state_path()).unwrap();
     // The preceding load created the dedicated lock file; replace it only
     // after that handle has been dropped by the failed load.
     fs::remove_file(location.lock_path()).unwrap();
