@@ -54,6 +54,15 @@ impl Tui {
         drop(pty.slave);
         let mut reader = pty.master.try_clone_reader().unwrap();
         let writer = pty.master.take_writer().unwrap();
+        #[cfg(target_os = "windows")]
+        let mut writer = writer;
+        #[cfg(target_os = "windows")]
+        {
+            // portable-pty requests cursor inheritance from ConPTY. Supply a
+            // cursor-position response even when the CI host has no terminal.
+            writer.write_all(b"\x1b[1;1R").unwrap();
+            writer.flush().unwrap();
+        }
         let (sender, output) = mpsc::channel();
         std::thread::spawn(move || {
             let mut buffer = [0; 4096];
