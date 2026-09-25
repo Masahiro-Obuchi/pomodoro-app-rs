@@ -32,8 +32,8 @@ GitHubのpath filterでworkflowを飛ばすと、必須チェックにした場�
 | CI-1：起動条件と権限 | `platform-probe.yml`のpath filterを外し、全PRとmainへのpush、手動実行で同じ4 OS検証を行う。`GITHUB_TOKEN`を`contents: read`に限定し、check名を固定する。新しいpushで同一PRの古い実行だけをキャンセルし、mainの実行は残す。merge queueを採用する場合のみ`merge_group`を追加する | workflow変更PRで4 OS成功。マージ後のmain push実行が成功 |
 | CI-2：coreだけの変更で起動確認 | `domain_tests.rs`の既存の決定的な混合操作テストにseed・操作番号・時刻・commandを示す失敗診断を追加する。変更対象をcoreだけに限定する | coreだけを変更したPRに4 OS checkが作られ、失敗時の操作列を再現できる。既存の8 seed×400操作を単に増やさない |
 | CI-3：表示と未保存終了の実行ファイルテスト | `native_terminal.rs`の出力履歴assertionを画面スナップショットで補強する。保存失敗時の24×20の再試行・未保存終了キーと、24×9の拡大案内を実際の最終画面で検査する。`Q`→`y`の未保存終了を4 OSのPTY/ConPTYで通す | 各OSで終了コードが非0、未確定候補が本体へ入らない、ロックが解放され再起動できることを確認。描画が後で消えた場合に失敗するテストになる |
-| CI-4：新しいtoolchainと診断 | Rust 1.86の4 OS jobを維持し、Linuxに最新stableでのworkspace test/buildを追加する。各jobでRust/Cargo版を記録する。保存境界・画面サイズが分かるassertionへ必要箇所だけ改める | 1.86とstableの結果を区別してPRに表示できる。障害を再現する条件がログから取れ、テストの自動再試行で失敗を隠さない |
-| CI-5：mainのマージ条件 | CI-1～4のcheck名と実行時間が安定した後、GitHubのmainの既存rulesetへ4 OSの必要なcheckを追加する。既存のPR・履歴保護規則を維持し、設定とcheck名を記録する | coreだけ、文書だけ、通常のコード変更のPRに必須checkが現れ、通常のマージで失敗したPRがmainへ入らない。main pushの結果も確認できる |
+| CI-4：新しいtoolchainと診断 | Rust 1.86の4 OS jobを維持し、Linuxに最新stableでのworkspace test/buildを追加する。各jobでRust/Cargo版を記録する。保存境界・画面サイズが分かるassertionへ必要箇所だけ改める | 1.86の4 jobとLinux stableのjobが成功し、結果を区別してPRに表示できる。障害を再現する条件がログから取れ、テストの自動再試行で失敗を隠さない |
+| CI-5：mainのマージ条件 | CI-1～4のcheck名と実行時間が安定した後、GitHubのmainの既存rulesetへRust 1.86の4 OS checkとLinux stable checkの計5件を必須チェックとして追加する。既存のPR・履歴保護規則を維持し、設定とcheck名を記録する | coreだけ、文書だけ、通常のコード変更のPRに5件の必須checkが現れ、stableを含むいずれかが失敗したPRは通常のマージでmainへ入らない。main pushの結果も確認できる |
 
 CI-3は既存のLinux `terminal.rs`で検証済みの入力経路を4 OSへ広げる。表示の検査には端末の現在のセルを追跡できる仕組みを選び、ANSI列を手書きで広く再実装しない。既存のタイムアウトと一時保存先の隔離を保ち、実時間で25分待つテストは追加しない。
 
@@ -44,15 +44,15 @@ CI-2でcoreの混合操作テストを見直す場合は、seed数だけを増�
 1. workflow変更PRで4 OSのformat・clippy・probe・全テスト・クラッシュ境界・buildが成功する。
 2. CI-1をマージしたmain pushで同じ4 OS jobが成功する。PR上の成功だけでmainの設定完了としない。
 3. CI-2のcoreだけを変更するPRで、path filterに頼らず4 OS checkが生じることを確認する。文書だけのPRでもcheckが省略されないことを確認する。
-4. check名を確認した後にCI-5を適用する。既存PRのPending状態や、同名checkの取り違えがないことを確認してから必須化する。
+4. CI-4でLinux stable jobを追加し、Rust 1.86の4 OS checkと合わせた5件のcheck名を確認した後にCI-5を適用する。既存PRのPending状態や、同名checkの取り違えがないことを確認してから5件とも必須化する。
 
 PRでは`pull_request`を使い、secretを使う公開・配布処理を同居させない。GitHubはPR用の一時的なmerge commitをcheckoutするため、PRのテストは通常、baseとの結合結果を検証する。[GitHubイベント仕様](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows) 読込専用tokenは[GitHubの権限指針](https://docs.github.com/en/actions/reference/security/secure-use)に従う。
 
-4 OSの全テストを文書だけのPRにも実行するため、実行時間・失敗率を各PRで記録する。PRの古い実行だけを止める設定は[GitHubのconcurrency構文](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency)を使う。費用や待ち時間が実際の問題になった場合に、常時走る必須checkを残したままjob分割やcacheを別PRで検討する。cacheの導入は速度だけで判断せず、forkからのPRと書込権限の境界を確認する。[GitHub cacheの指針](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
+CI-4以降はRust 1.86の4 OS jobとLinux stable jobを文書だけのPRにも実行するため、実行時間・失敗率を各PRで記録する。PRの古い実行だけを止める設定は[GitHubのconcurrency構文](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency)を使う。費用や待ち時間が実際の問題になった場合に、常時走る必須checkを残したままjob分割やcacheを別PRで検討する。cacheの導入は速度だけで判断せず、forkからのPRと書込権限の境界を確認する。[GitHub cacheの指針](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
 
 ## 5. 全体の完了条件
 
-- coreのみのPRを含む全PRとmain pushで必要なCIが起動し、4 OSのRust 1.86 jobが成功する。Linuxのstable jobも成功する。
+- coreのみのPRを含む全PRとmain pushでRust 1.86の4 OS jobとLinux stable jobが起動・成功し、5件ともmainの必須チェックに設定される。
 - 24×20と24×9の現在の画面、未保存終了後の保存値・終了コード・排他解放を、ネイティブPTY/ConPTYテストで確認する。
 - 必須checkと実際に起動するjobが一致し、失敗したPRがmainへ入らない。設定済みのcheck名と代表的な実行URLをPRまたは本書に残す。
 - W5bの実端末受入は未完了のまま記録し、CIの成功をWindows Terminal・Terminal.appや通知の実表示の証拠として扱わない。
