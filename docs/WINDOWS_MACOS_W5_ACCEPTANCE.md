@@ -1,14 +1,14 @@
-# Windows / macOS W5 受入記録
+# Windows / macOS W5a 自動検証・W5b 受入記録
 
 記録開始日（日本時間）：2026-09-25
 
-状態：Rust 1.86の4 OS CIと疑似端末テストは成功。Windows TerminalとTerminal.appを使用できる実機がないため、バージョンを固定した実端末受入は**未開始**。この記録だけでWindows/macOS対応完了とは判定しない。
+状態：W5aのRust 1.86の4 OS CIと疑似端末テストは成功（[PR #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/41)）。Windows TerminalとTerminal.appを使用できる実機がないため、W5bのバージョンを固定した実端末受入は**未開始**。W5aのレビュー・マージだけでWindows/macOS対応完了とは判定しない。
 
 [対応計画](WINDOWS_MACOS_PLAN.md)の§5–6と[W4検証記録](WINDOWS_MACOS_W4_FINDINGS.md)を受入基準にする。CI runnerのOS版と実端末のOS版を別々に記録する。
 
 ## CIで確認する範囲
 
-[W5 CI実行 #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36161680731)で次の4 jobが成功した。各jobでformat、clippy、workspace全テスト・ビルド、保存probe、保存途中の子プロセス強制終了を実行した。
+[W5a CI実行 #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36161680731)で次の4 jobが成功した。各jobでformat、clippy、workspace全テスト・ビルド、保存probe、保存途中の子プロセス強制終了を実行した。
 
 | 対象 | CI runner | 確認すること | 結果 |
 | --- | --- | --- | --- |
@@ -23,7 +23,7 @@ Windowsの疑似端末にはConPTYを使う。CIのheadless環境では、PTYラ
 
 ## 実端末の対象と版
 
-実端末を確保した時点で、**受入を始める前に**次の組合せのOS・端末・ファイルシステムの具体的なバージョンを記入する。対象はWindows x86_64のWindows Terminal上のPowerShell、macOS Apple SiliconとIntelのTerminal.app、Linuxのローカル端末。Windowsは管理者ではない通常ユーザーを使う。WSL、ネットワーク・同期フォルダは対象外。
+W5bで実端末を確保した時点で、**受入を始める前に**次の組合せのOS・端末・ファイルシステムの具体的なバージョンを記入する。対象はWindows x86_64のWindows Terminal上のPowerShell、macOS Apple SiliconとIntelのTerminal.app、Linuxのローカル端末。Windowsは管理者ではない通常ユーザーを使う。WSL、ネットワーク・同期フォルダは対象外。
 
 | 対象 | OSの版・build | 端末の版 | ファイルシステム | 通知設定 | 実施日・結果 |
 | --- | --- | --- | --- | --- | --- |

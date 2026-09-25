@@ -14,6 +14,8 @@
 | [Windows / macOS W0調査](WINDOWS_MACOS_W0_FINDINGS.md) | 保存APIのネイティブ検証結果、採用候補、残る確認項目 |
 | [Windows / macOS W2検証](WINDOWS_MACOS_W2_FINDINGS.md) | macOS保存APIの選択、CI検証、残る実端末確認 |
 | [Windows / macOS W3検証](WINDOWS_MACOS_W3_FINDINGS.md) | Windows保存APIの選択、CI検証、残る実端末確認 |
+| [Windows / macOS W4検証](WINDOWS_MACOS_W4_FINDINGS.md) | 通知方式と端末復元のCI検証、残る実表示確認 |
+| [Windows / macOS W5a自動検証・W5b受入](WINDOWS_MACOS_W5_ACCEPTANCE.md) | 4 OS CIの結果、実端末受入手順と未実施項目 |
 
 ## 過去資料
 
