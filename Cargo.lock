@@ -955,6 +955,7 @@ dependencies = [
  "directories",
  "fs4",
  "pomodoro-core",
+ "pomodoro-winfs",
  "rustix",
  "same-file",
  "serde",
@@ -975,6 +976,13 @@ dependencies = [
  "rustix",
  "tempfile",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "pomodoro-winfs"
+version = "0.1.0"
+dependencies = [
+ "windows-sys",
 ]
 
 [[package]]

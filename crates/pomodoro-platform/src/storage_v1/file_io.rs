@@ -311,4 +311,19 @@ mod windows_tests {
             assert_eq!(fs::symlink_metadata(&path).unwrap().is_symlink(), link);
         }
     }
+
+    #[test]
+    fn cleanup_keeps_a_distinct_file_with_identical_bytes() {
+        let directory = crate::storage_v1::test_tempdir();
+        let target = directory.path().join("state.json");
+        let mut temporary = TemporaryFile::create(&target).unwrap();
+        temporary.file.write_all(b"same bytes").unwrap();
+        let path = temporary.path.clone().unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::write(&path, b"same bytes").unwrap();
+
+        assert!(!temporary.owns_path(&path).unwrap());
+        temporary.cleanup().unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"same bytes");
+    }
 }

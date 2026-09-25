@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use same_file::Handle;
+use pomodoro_winfs::file_identity;
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
 };
@@ -88,13 +88,13 @@ pub(super) fn owns_path(file: &File, path: &Path) -> io::Result<bool> {
         Err(error) if error.kind() == io::ErrorKind::InvalidInput => return Ok(false),
         Err(error) => return Err(error),
     };
-    let original = Handle::from_file(file.try_clone()?)?;
-    let current = Handle::from_file(path_file.try_clone()?)?;
+    let original = file_identity(file)?;
+    let current = file_identity(&path_file)?;
     if original != current {
         return Ok(false);
     }
-    // `same-file` uses a shortened Windows file ID. Compare bytes too before
-    // deleting an owned temp or trusting a recovery archive at the same path.
+    // Keep the content check as a guard against unexpected identity behavior
+    // before deleting a temp or trusting a recovery archive at the same path.
     let mut original_file = file.try_clone()?;
     original_file.seek(SeekFrom::Start(0))?;
     let mut original_bytes = Vec::new();
