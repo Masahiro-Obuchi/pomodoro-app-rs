@@ -2,19 +2,20 @@ name: Native platform validation
 
 on:
   pull_request:
-    paths:
-      - .github/workflows/platform-probe.yml
-      - crates/pomodoro-platform/**
-      - crates/pomodoro-winfs/**
-      - apps/pomodoro-tui/**
-      - README.md
-      - docs/WINDOWS_MACOS_PLAN.md
-      - docs/WINDOWS_MACOS_W5_ACCEPTANCE.md
-      - Cargo.toml
-      - Cargo.lock
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  probe:
+  minimum-rust:
+    name: Rust 1.86 / ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -26,6 +27,10 @@ jobs:
         run: rustup toolchain install 1.86.0 --profile minimal
       - name: Install formatting and lint components
         run: rustup component add clippy rustfmt --toolchain 1.86.0
+      - name: Record toolchain versions
+        run: |
+          rustc +1.86.0 --version
+          cargo +1.86.0 --version
       - name: Check formatting
         run: cargo +1.86.0 fmt --all -- --check
       - name: Check workspace lints
@@ -38,3 +43,4 @@ jobs:
         run: cargo +1.86.0 test --locked -p pomodoro-platform --lib crash_boundaries_in_isolated_process -- --ignored
       - name: Build workspace
         run: cargo +1.86.0 build --locked --workspace
+
