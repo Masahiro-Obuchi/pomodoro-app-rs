@@ -3,14 +3,14 @@
 use std::{
     fs,
     io::{Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
+    process::Command,
     sync::mpsc::{self, Receiver},
     time::{Duration, Instant},
 };
 
 use pomodoro_core::{ProgressState, TimerState};
 use pomodoro_platform::{LoadOutcome, StorageLocation};
-use pomodoro_tui::{controller::ExitOutcome, terminal};
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -18,14 +18,14 @@ const VALID: &[u8] =
     include_bytes!("../../../crates/pomodoro-platform/tests/fixtures/state_v1.json");
 
 #[test]
-#[ignore = "PTY subprocess helper invoked by native terminal tests"]
-fn native_terminal_probe() {
-    let directory = PathBuf::from(std::env::var_os("POMODORO_TEST_STATE_DIR").unwrap());
-    let stage = directory.parent().unwrap().join("probe-stage");
-    fs::write(&stage, "entered probe").unwrap();
-    let outcome = terminal::run(StorageLocation::at(directory));
-    fs::write(stage, format!("terminal returned: {outcome:?}")).unwrap();
-    assert_eq!(outcome.unwrap(), ExitOutcome::Saved);
+fn empty_state_directory_override_stops_before_terminal_setup() {
+    let output = Command::new(env!("CARGO_BIN_EXE_pomodoro-tui"))
+        .env("POMODORO_STATE_DIR", "")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("POMODORO_STATE_DIR cannot be empty"));
 }
 
 struct Tui {
@@ -34,7 +34,6 @@ struct Tui {
     writer: Box<dyn Write + Send>,
     output: Receiver<Vec<u8>>,
     received: Vec<u8>,
-    stage: PathBuf,
 }
 
 impl Tui {
@@ -47,14 +46,8 @@ impl Tui {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(std::env::current_exe().unwrap());
-        command.args([
-            "--exact",
-            "native_terminal_probe",
-            "--ignored",
-            "--nocapture",
-        ]);
-        command.env("POMODORO_TEST_STATE_DIR", directory);
+        let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_pomodoro-tui"));
+        command.env("POMODORO_STATE_DIR", directory);
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         command.env("TERM", "xterm-256color");
         let child = pty.slave.spawn_command(command).unwrap();
@@ -76,7 +69,6 @@ impl Tui {
             writer,
             output,
             received: Vec::new(),
-            stage: directory.parent().unwrap().join("probe-stage"),
         }
     }
 
@@ -100,9 +92,8 @@ impl Tui {
             match self.output.recv_timeout(remaining) {
                 Ok(bytes) => self.received.extend(bytes),
                 Err(error) => panic!(
-                    "waiting for {phrase:?}: {error}; child: {:?}; stage: {:?}; output: {emitted}",
-                    self.child.try_wait().unwrap(),
-                    fs::read_to_string(&self.stage)
+                    "waiting for {phrase:?}: {error}; child: {:?}; output: {emitted}",
+                    self.child.try_wait().unwrap()
                 ),
             }
         }

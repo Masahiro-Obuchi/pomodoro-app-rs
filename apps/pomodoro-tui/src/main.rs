@@ -1,4 +1,4 @@
-use std::{error::Error, process::ExitCode};
+use std::{env, error::Error, io, process::ExitCode};
 
 use pomodoro_platform::StorageLocation;
 use pomodoro_tui::{controller::ExitOutcome, terminal};
@@ -18,5 +18,16 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<ExitOutcome, Box<dyn Error>> {
-    terminal::run(StorageLocation::discover()?)
+    let location = match env::var_os("POMODORO_STATE_DIR") {
+        Some(directory) if directory.is_empty() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "POMODORO_STATE_DIR cannot be empty",
+            )
+            .into());
+        }
+        Some(directory) => StorageLocation::at(directory.into()),
+        None => StorageLocation::discover()?,
+    };
+    terminal::run(location)
 }
