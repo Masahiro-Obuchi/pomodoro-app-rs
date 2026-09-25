@@ -284,3 +284,31 @@ impl Drop for TemporaryFile {
         let _ = self.cleanup();
     }
 }
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use std::os::windows::fs::symlink_file;
+
+    #[test]
+    fn cleanup_never_deletes_a_replaced_temporary_path() {
+        for link in [false, true] {
+            let directory = crate::storage_v1::test_tempdir();
+            let target = directory.path().join("state.json");
+            let mut temporary = TemporaryFile::create(&target).unwrap();
+            temporary.file.write_all(b"owned temporary").unwrap();
+            let path = temporary.path.clone().unwrap();
+            fs::remove_file(&path).unwrap();
+            let external = directory.path().join("external");
+            fs::write(&external, b"external data").unwrap();
+            if link {
+                symlink_file(&external, &path).unwrap();
+            } else {
+                fs::write(&path, b"external data").unwrap();
+            }
+            temporary.cleanup().unwrap();
+            assert_eq!(fs::read(&path).unwrap(), b"external data");
+            assert_eq!(fs::symlink_metadata(&path).unwrap().is_symlink(), link);
+        }
+    }
+}
