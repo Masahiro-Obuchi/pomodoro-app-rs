@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-25
 
-状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)でマージ済み。W2のmacOS保存とTUIの接続は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)で検証・レビュー中。Windows保存はW3、通知方式と端末動作はW4、実端末バージョンを固定した受入はW5に残る
+状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)でマージ済み。W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)で検証・レビュー中。通知方式と端末動作はW4、実端末バージョンを固定した受入はW5に残る
 
 この計画は完了済みの Phase 0–4 とは独立した、既存 TUI の対応 OS 拡張を扱う。進捗は本書で管理し、Phase の完了状態は変更しない。実装を始める際は、各レビュー単位を独立した commit / PR にまとめ、依存順に確認する。
 
@@ -10,7 +10,9 @@ W0の実測と判断候補は[調査記録](WINDOWS_MACOS_W0_FINDINGS.md)に置�
 
 W2のmacOS保存APIとCI検証は[W2検証記録](WINDOWS_MACOS_W2_FINDINGS.md)に置く。W2では通知のmacOS対応と実端末での動作確認を完了扱いにしない。
 
-W1では保存先の解決を共通化し、Linux固有のファイル操作をV1保存 policy から分離した。W2ではmacOS向けに保存 policy とTUI/controller の Linux 限定 `cfg` を解除する。Windows向けの解除はW3で扱う。
+W3のWindows保存APIとCI検証は[W3検証記録](WINDOWS_MACOS_W3_FINDINGS.md)に置く。Windowsの通常ユーザー権限と実端末での操作・通知は引き続き受入確認が必要である。
+
+W1では保存先の解決を共通化し、Linux固有のファイル操作をV1保存 policy から分離した。W2ではmacOS向けに、W3ではWindows向けに保存 policy とTUI/controller の Linux 限定 `cfg` を解除する。
 
 ## 1. 目標と対象
 
@@ -24,12 +26,12 @@ W1では保存先の解決を共通化し、Linux固有のファイル操作をV
 | 領域 | 現状 | 対応時に確かめること |
 | --- | --- | --- |
 | ドメイン・時計 | core は OS 非依存。`ObservationClock` は `SystemTime` と `Instant` を使う | スリープ、時刻変更、再起動後に停止時間を加算しない |
-| TUI | Crossterm / Ratatui を使用。W2で公開モジュールとcontrollerをmacOSにも接続。実端末での動作と通知方式は未確認 | Windows/macOS で raw mode、代替画面、キー、貼付け、リサイズ、通常終了・処理可能なエラー時の端末復元が動く |
+| TUI | Crossterm / Ratatui を使用。W2/W3で公開モジュールとcontrollerをmacOS/Windowsにも接続。実端末での動作と通知方式は未確認 | Windows/macOS で raw mode、代替画面、キー、貼付け、リサイズ、通常終了・処理可能なエラー時の端末復元が動く |
 | 保存先 | `StorageLocation::discover()` は Linux の XDG state directory と、それがない OS での `data_local_dir()` を使用 | Linux のパスを変えず、Windows のローカルデータ領域と macOS の Application Support に保存する。実際のパスを表示・文書化する |
-| 排他 | LinuxとmacOSは`rustix::flock`と`NOFOLLOW`付きの専用`state.lock`を使用。WindowsはW3 | 各 OS で読込前から最終保存まで非ブロッキング排他し、別プロセスと異常終了を検証する |
-| 保存と復旧 | LinuxとmacOSはUnixのfile IDと`fs::rename`を共有。Linuxは`fsync`、macOSは`F_FULLFSYNC`でファイル・親・祖先を同期。WindowsはW3 | 置換の原子性、再試行、同名ファイルの差し替え、リンク、クラッシュ時の判定、同期の成否を OS ごとに確認する |
+| 排他 | LinuxとmacOSは`rustix::flock`、Windowsは`fs4::try_lock`を専用`state.lock`に使用 | 各 OS で読込前から最終保存まで非ブロッキング排他し、別プロセスと異常終了を検証する |
+| 保存と復旧 | 共通のV1保存policyを使用。Linux/macOSはUnixのfile ID、Windowsは`same-file`とファイル内容で一時ファイルの同一性を確認。Windowsは書込用ディレクトリハンドルを同期 | 置換の原子性、再試行、同名ファイルの差し替え、リンク、クラッシュ時の判定、同期の成否を OS ごとに確認する |
 | 通知 | `notify-send` 固定 | 各 OS の通知手段を選び、保存成功後だけ試みる。通知失敗は保存済みの完了を取り消さない |
-| テスト | W2で保存・TUIの統合テストをmacOSに拡張。端末テストは引き続きLinux PTYを使用 | OS 共通のケースを再利用し、OS 固有のケースと実端末確認を追加する |
+| テスト | W2/W3で保存・TUIの統合テストをmacOS/Windowsに拡張。端末テストは引き続きLinux PTYを使用 | OS 共通のケースを再利用し、OS 固有のケースと実端末確認を追加する |
 
 `directories` 6.0 の `BaseDirs::state_dir()` は Linux で値を返し、Windows/macOS では値を返さない。現在の `data_local_dir()` フォールバックはそれぞれローカル AppData と `~/Library/Application Support` を指す。パスの決定と表示は検証するが、Windows のパスを XDG と呼ばない。
 
