@@ -82,6 +82,10 @@ impl Tui {
     }
 
     fn expect(&mut self, phrase: &str) {
+        self.expect_all(&[phrase]);
+    }
+
+    fn expect_all(&mut self, phrases: &[&str]) {
         let compact = |text: &str| {
             text.chars()
                 .filter(|ch| {
@@ -89,11 +93,12 @@ impl Tui {
                 })
                 .collect::<String>()
         };
-        let expected = compact(phrase);
+        let expected: Vec<_> = phrases.iter().map(|phrase| compact(phrase)).collect();
         let deadline = Instant::now() + TIMEOUT;
         loop {
             let emitted = without_csi(&self.received);
-            if compact(&emitted).contains(&expected) {
+            let text = compact(&emitted);
+            if expected.iter().all(|phrase| text.contains(phrase)) {
                 self.received.clear();
                 return;
             }
@@ -101,7 +106,7 @@ impl Tui {
             match self.output.recv_timeout(remaining) {
                 Ok(bytes) => self.received.extend(bytes),
                 Err(error) => panic!(
-                    "waiting for {phrase:?}: {error}; child: {:?}; output: {emitted}",
+                    "waiting for {phrases:?}: {error}; child: {:?}; output: {emitted}",
                     self.child.try_wait().unwrap()
                 ),
             }
@@ -237,4 +242,44 @@ fn native_pty_requires_consent_before_recovering_a_broken_primary() {
         entry.file_name().to_string_lossy().contains("quarantine")
             && fs::read(entry.path()).unwrap() == b"broken primary"
     }));
+}
+
+#[test]
+fn native_pty_keeps_save_recovery_keys_visible_and_retries_the_same_candidate() {
+    let directory = tempfile::tempdir().unwrap();
+    let location = StorageLocation::at(directory.path().join("state"));
+    let mut tui = Tui::spawn(location.directory(), 100, 30);
+    tui.expect("Space: Start");
+    tui.send(b" ");
+    tui.expect("Session started and saved");
+    let saved_before_failure = fs::read(location.state_path()).unwrap();
+    fs::remove_file(location.backup_path()).unwrap();
+    fs::create_dir(location.backup_path()).unwrap();
+    tui.send(b"d");
+    tui.expect("Could not confirm save");
+    assert_eq!(
+        fs::read(location.state_path()).unwrap(),
+        saved_before_failure
+    );
+    tui.resize(24, 20);
+    tui.expect_all(&["r: Retry save", "Q: Confirm unsaved exit"]);
+    fs::remove_dir(location.backup_path()).unwrap();
+    tui.send(b"r");
+    tui.expect("Distraction saved");
+    tui.send(b"q");
+    tui.finish();
+
+    let LoadOutcome::Loaded(store) = location.clone().lock().unwrap().load().unwrap() else {
+        panic!("expected saved V1 state");
+    };
+    assert_eq!(
+        store
+            .saved_state()
+            .unwrap()
+            .domain()
+            .reflection()
+            .unwrap()
+            .distractions,
+        1
+    );
 }
