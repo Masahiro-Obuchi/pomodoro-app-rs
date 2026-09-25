@@ -20,6 +20,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install minimum Rust toolchain
         run: rustup toolchain install 1.86.0 --profile minimal
+      - name: Install formatting and lint components
+        run: rustup component add clippy rustfmt --toolchain 1.86.0
+      - name: Check formatting
+        run: cargo +1.86.0 fmt --all -- --check
+      - name: Check workspace lints
+        run: cargo +1.86.0 clippy --locked --workspace --all-targets -- -D warnings
       - name: Probe local filesystem
         run: cargo +1.86.0 test --locked -p pomodoro-platform --test platform_probe -- --nocapture
       - name: Test workspace
