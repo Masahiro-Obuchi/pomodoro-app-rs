@@ -39,7 +39,7 @@ The [implementation plan](docs/IMPLEMENTATION_PLAN.md) defines phase goals, depe
 
 The completed [Phase 2 plan](docs/archive/PHASE2_PLAN.md), [Phase 3 plan](docs/archive/PHASE3_PLAN.md), and [Phase 4 plan](docs/archive/PHASE4_PLAN.md) are archived as records of their implementation. The [documentation index](docs/README.md) separates current documents from past plans. Phase-level progress remains in the implementation plan.
 
-The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate future expansion of the TUI. The current executable remains Linux-only.
+The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate expansion of the TUI. Linux remains the only fully accepted platform; Windows and macOS await real-terminal acceptance.
 
 ## Requirements
 
@@ -52,6 +52,12 @@ The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate futur
 
 ```bash
 cargo run -p pomodoro-tui
+```
+
+For an isolated development run, set `POMODORO_STATE_DIR` to a separate application directory before starting the TUI. The directory will contain its own `state.json`, backup, and lock; an empty value is rejected. Without this variable, the normal OS storage location is used. On Linux, for example:
+
+```bash
+POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
 ```
 
 ### Controls
@@ -97,7 +103,7 @@ cargo test --workspace
 cargo test -p pomodoro-platform --lib crash_boundaries_in_isolated_process -- --ignored
 ```
 
-The crash suite runs separately so subprocess creation cannot temporarily inherit locks held by parallel unit tests. It stops children at save boundaries and checks restart behavior; it does not simulate power loss. Linux TUI integration tests use pseudoterminals to exercise the executable's real input and exit paths.
+The crash suite runs separately so subprocess creation cannot temporarily inherit locks held by parallel unit tests. It stops children at save boundaries and checks restart behavior; it does not simulate power loss. Native TUI integration tests use pseudoterminals (ConPTY on Windows) to exercise the executable's real input and exit paths. These tests do not replace real-terminal acceptance.
 
 ## License
 

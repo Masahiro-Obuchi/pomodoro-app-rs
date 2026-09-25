@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-25
 
-状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)、W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)でマージ済み。W4の通知と端末復元は[PR #40](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/40)でレビュー中。実端末バージョンを固定した受入はW5に残る
+状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)、W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)、W4の通知と端末復元は[PR #40](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/40)でマージ済み。W5のCI・実端末受入・利用案内は[PR #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/41)で進行中。実端末を利用できず、Windows/macOS対応完了の判定は保留
 
 この計画は完了済みの Phase 0–4 とは独立した、既存 TUI の対応 OS 拡張を扱う。進捗は本書で管理し、Phase の完了状態は変更しない。実装を始める際は、各レビュー単位を独立した commit / PR にまとめ、依存順に確認する。
 
@@ -13,6 +13,8 @@ W2のmacOS保存APIとCI検証は[W2検証記録](WINDOWS_MACOS_W2_FINDINGS.md)�
 W3のWindows保存APIとCI検証は[W3検証記録](WINDOWS_MACOS_W3_FINDINGS.md)に置く。Windowsの通常ユーザー権限と実端末での操作・通知は引き続き受入確認が必要である。
 
 W4の通知方式と端末復元の検証範囲は[W4検証記録](WINDOWS_MACOS_W4_FINDINGS.md)に置く。CI上の動作と実端末での表示を区別する。
+
+W5のCI結果と実端末受入の未実施項目は[W5受入記録](WINDOWS_MACOS_W5_ACCEPTANCE.md)に置く。利用できるWindows/macOS実端末がないため、対象端末の版の固定と実機での通知表示・操作確認は未開始である。
 
 W1では保存先の解決を共通化し、Linux固有のファイル操作をV1保存 policy から分離した。W2ではmacOS向けに、W3ではWindows向けに保存 policy とTUI/controller の Linux 限定 `cfg` を解除する。
 
@@ -78,7 +80,7 @@ W2 と W3 は別 PR にし、それぞれの対象 OS で保存の性質を確�
 | 既存 Linux PTY の端末テスト | 必須 | 対象外 | 対象外 |
 | ネイティブ端末での初回起動、操作、終了、再起動、復旧と画面復元 | 必須 | 必須 | 必須 |
 
-GitHub Actions には `ubuntu-latest`、`windows-latest`、`macos-latest` と `macos-15-intel` の job を設ける。Linux PTY テストだけを Linux に限定し、保存・controller・描画の共通テストは各 OS で動かす。CI の headless 環境では通知の実表示や端末の完全な動作は確認できないため、通知は送信 adapter のテストと実機確認を併用する。Windows は Windows Terminal 上の PowerShell、macOS は Terminal.app を最低限の実端末確認先とする。OS・端末の具体的なバージョンは W5 の受入開始前に固定する。
+GitHub Actions には `ubuntu-24.04`、`windows-2025`、`macos-15` と `macos-15-intel` の job を設ける。Linux 固有の PTY テストだけを Linux に限定し、ネイティブ PTY と保存・controller・描画の共通テストは各 OS で動かす。CI の headless 環境では通知の実表示や端末の完全な動作は確認できないため、通知は送信 adapter のテストと実機確認を併用する。Windows は Windows Terminal 上の PowerShell、macOS は Terminal.app を最低限の実端末確認先とする。OS・端末の具体的なバージョンは W5 の受入開始前に固定する。
 
 実端末では Focus と Quick Start、Current Task の Unicode 入力と貼付け、Pause / Distraction / Return、History、狭い画面での保存再試行と未保存終了、バックアップ確認、正常終了と処理可能なエラー時の raw mode と代替画面の復元を確認する。スリープや時刻変更後の観測空白も各 OS で確認し、終了中の時間が作業時間に加わらないことを保存内容と表示で照合する。
 
