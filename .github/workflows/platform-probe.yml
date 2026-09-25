@@ -44,3 +44,18 @@ jobs:
       - name: Build workspace
         run: cargo +1.86.0 build --locked --workspace
 
+  stable-rust:
+    name: Rust stable / ubuntu-24.04
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+      - name: Record toolchain versions
+        run: |
+          rustc +stable --version
+          cargo +stable --version
+      - name: Test workspace including native PTY workflows
+        run: cargo +stable test --locked --workspace
+      - name: Build workspace
+        run: cargo +stable build --locked --workspace
