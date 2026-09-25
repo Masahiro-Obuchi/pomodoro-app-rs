@@ -5,7 +5,7 @@ mod support;
 use std::{
     fs,
     io::{self, BufRead, Read, Write},
-    os::windows::fs::symlink_file,
+    os::windows::fs::{OpenOptionsExt, symlink_file},
     path::Path,
     process::{Child, Command, Stdio},
     sync::mpsc::{self, Receiver},
@@ -131,6 +131,26 @@ fn reparse_points_are_not_loaded_or_used_as_a_lock() {
     symlink_file(&outside, location.lock_path()).expect("Windows test runner must create symlinks");
     assert!(matches!(location.lock(), Err(StorageLockError::Io { .. })));
     assert_eq!(fs::read(&outside).unwrap(), VALID);
+}
+
+#[test]
+fn inaccessible_primary_is_an_error_not_a_new_store() {
+    let directory = support::tempdir();
+    let location = StorageLocation::at(directory.path().to_owned());
+    fs::write(location.state_path(), VALID).unwrap();
+    let blocker = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(location.state_path())
+        .unwrap();
+    let error = location.clone().lock().unwrap().load().unwrap_err();
+    assert!(error.to_string().contains("state.json"));
+    assert!(fs::read(location.state_path()).is_err());
+    drop(blocker);
+    let LoadOutcome::Loaded(store) = location.lock().unwrap().load().unwrap() else {
+        panic!("valid primary after the sharing conflict ends");
+    };
+    assert_eq!(store.saved_state().unwrap().original_bytes(), VALID);
 }
 
 #[test]

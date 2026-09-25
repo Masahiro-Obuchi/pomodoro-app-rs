@@ -1,5 +1,8 @@
 use super::*;
-use std::{fs::OpenOptions, os::windows::fs::OpenOptionsExt};
+use std::{
+    fs::OpenOptions,
+    os::windows::fs::{OpenOptionsExt, symlink_file},
+};
 use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_READ, FILE_SHARE_WRITE};
 
 #[test]
@@ -39,4 +42,32 @@ fn replacement_error_keeps_the_candidate_uncertain_until_primary_is_reread() {
     store.retry_pending().unwrap();
     assert_eq!(fs::read(location.state_path()).unwrap(), fixed);
     assert_eq!(fs::read(location.backup_path()).unwrap(), VALID);
+}
+
+#[test]
+fn replacement_never_writes_through_an_external_symlink() {
+    let directory = crate::storage_v1::test_tempdir();
+    let location = StorageLocation::at(directory.path().to_owned());
+    fs::write(location.state_path(), VALID).unwrap();
+    let mut store = load(&location);
+    let external = directory.path().join("outside.json");
+    fs::write(&external, b"external data").unwrap();
+    let result = store.save_with_hook(&domain(), Timestamp(2_000), &mut |stage, path| {
+        if stage == SaveStage::RenamePrimary {
+            fs::remove_file(path)?;
+            symlink_file(&external, path)?;
+        }
+        Ok(())
+    });
+    assert_eq!(fs::read(&external).unwrap(), b"external data");
+    match result {
+        Ok(saved) => assert_eq!(
+            fs::read(location.state_path()).unwrap(),
+            saved.original_bytes()
+        ),
+        Err(error) => {
+            assert!(error.is_commit_uncertain());
+            assert!(store.pending_save().is_some());
+        }
+    }
 }
