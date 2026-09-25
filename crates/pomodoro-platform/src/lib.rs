@@ -8,7 +8,7 @@ mod storage_lock_error;
 mod storage_v1;
 mod time;
 
-pub use notification::{NotificationError, NotifySendNotifier};
+pub use notification::{DesktopNotifier, NotificationError};
 pub use storage_location::StorageLocation;
 pub use storage_lock_error::StorageLockError;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

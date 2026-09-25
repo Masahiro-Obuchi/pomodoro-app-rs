@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-25
 
-状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)でマージ済み。W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)で検証・レビュー中。通知方式と端末動作はW4、実端末バージョンを固定した受入はW5に残る
+状態：W0の保存API部分調査は[PR #36](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/36)、W1の共通境界は[PR #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/37)、W2のmacOS保存は[PR #38](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/38)、W3のWindows保存とTUIの接続は[PR #39](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/39)でマージ済み。W4の通知と端末復元は[PR #40](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/40)でレビュー中。実端末バージョンを固定した受入はW5に残る
 
 この計画は完了済みの Phase 0–4 とは独立した、既存 TUI の対応 OS 拡張を扱う。進捗は本書で管理し、Phase の完了状態は変更しない。実装を始める際は、各レビュー単位を独立した commit / PR にまとめ、依存順に確認する。
 
@@ -11,6 +11,8 @@ W0の実測と判断候補は[調査記録](WINDOWS_MACOS_W0_FINDINGS.md)に置�
 W2のmacOS保存APIとCI検証は[W2検証記録](WINDOWS_MACOS_W2_FINDINGS.md)に置く。W2では通知のmacOS対応と実端末での動作確認を完了扱いにしない。
 
 W3のWindows保存APIとCI検証は[W3検証記録](WINDOWS_MACOS_W3_FINDINGS.md)に置く。Windowsの通常ユーザー権限と実端末での操作・通知は引き続き受入確認が必要である。
+
+W4の通知方式と端末復元の検証範囲は[W4検証記録](WINDOWS_MACOS_W4_FINDINGS.md)に置く。CI上の動作と実端末での表示を区別する。
 
 W1では保存先の解決を共通化し、Linux固有のファイル操作をV1保存 policy から分離した。W2ではmacOS向けに、W3ではWindows向けに保存 policy とTUI/controller の Linux 限定 `cfg` を解除する。
 
@@ -26,11 +28,11 @@ W1では保存先の解決を共通化し、Linux固有のファイル操作をV
 | 領域 | 現状 | 対応時に確かめること |
 | --- | --- | --- |
 | ドメイン・時計 | core は OS 非依存。`ObservationClock` は `SystemTime` と `Instant` を使う | スリープ、時刻変更、再起動後に停止時間を加算しない |
-| TUI | Crossterm / Ratatui を使用。W2/W3で公開モジュールとcontrollerをmacOS/Windowsにも接続。実端末での動作と通知方式は未確認 | Windows/macOS で raw mode、代替画面、キー、貼付け、リサイズ、通常終了・処理可能なエラー時の端末復元が動く |
+| TUI | Crossterm / Ratatui を使用。W2/W3で公開モジュールとcontrollerをmacOS/Windowsにも接続。W4で端末復元を各操作ごとに試す。実端末での動作は未確認 | Windows/macOS で raw mode、代替画面、キー、貼付け、リサイズ、通常終了・処理可能なエラー時の端末復元が動く |
 | 保存先 | `StorageLocation::discover()` は Linux の XDG state directory と、それがない OS での `data_local_dir()` を使用 | Linux のパスを変えず、Windows のローカルデータ領域と macOS の Application Support に保存する。実際のパスを表示・文書化する |
 | 排他 | LinuxとmacOSは`rustix::flock`、Windowsは`fs4::try_lock`を専用`state.lock`に使用 | 各 OS で読込前から最終保存まで非ブロッキング排他し、別プロセスと異常終了を検証する |
 | 保存と復旧 | 共通のV1保存policyを使用。Linux/macOSはUnixのfile ID、Windowsは開いたハンドルの128-bit file IDと内容で一時ファイルの同一性を確認。Windowsは保存ディレクトリと今回作成したディレクトリの親を同期 | 置換の原子性、再試行、同名ファイルの差し替え、リンク、クラッシュ時の判定、同期の成否を OS ごとに確認する |
-| 通知 | `notify-send` 固定 | 各 OS の通知手段を選び、保存成功後だけ試みる。通知失敗は保存済みの完了を取り消さない |
+| 通知 | W4でLinuxの`notify-send`、macOSの`osascript`、WindowsのWinRT toastを接続。実表示は未確認 | 保存成功後だけ試みる。通知失敗は保存済みの完了を取り消さない。各OSの実表示と通知元を受入で確認する |
 | テスト | W2/W3で保存・TUIの統合テストをmacOS/Windowsに拡張。端末テストは引き続きLinux PTYを使用 | OS 共通のケースを再利用し、OS 固有のケースと実端末確認を追加する |
 
 `directories` 6.0 の `BaseDirs::state_dir()` は Linux で値を返し、Windows/macOS では値を返さない。現在の `data_local_dir()` フォールバックはそれぞれローカル AppData と `~/Library/Application Support` を指す。パスの決定と表示は検証するが、Windows のパスを XDG と呼ばない。
@@ -59,8 +61,8 @@ W0ではこのうち、別プロセスの排他と強制終了後の再取得、
 | W1：共通境界と保存先 | 保存先と発見エラーを OS 共通にし、Linux 固有のファイル操作を V1 保存処理から分離する。V1 codec と保存先解決を各 OS でテストする。保存 policy と TUI/controller は Linux 限定のまま維持する | Linux の保存先と保存・復旧テストが維持される。Windows/macOS で保存先解決と platform の OS 共通テストが通る。各 OS での保存と TUI 全体のビルドは W2/W3 で通す |
 | W2：macOS 保存 | Unix 系の API を再利用できる部分と macOS 固有の同期・ロックを分け、保存・読込・再試行・復旧を接続 | macOS の実ファイル・別プロセステストと保存境界の失敗注入が通る |
 | W3：Windows 保存 | Windows 向けのロック、リンクを追わない読込、同一性確認、置換・同期を保存層内に実装。Linux/macOS の保存 policy は共有する | Windows の実ファイル・別プロセステストと保存境界の失敗注入が通る |
-| W4：通知と端末 | macOS/Windows の通知方式を選定・記録し、通知本文と送信時機を共通化して各 OS の adapter を追加。TUI の起動、入力、画面復元、エラー表示を調整 | 選定した方式が Rust 1.86 で動き、保存成功前に通知せず、通知失敗でデータを失わない。実端末で主要キー・貼付け・リサイズ・復旧画面を暫定確認し、W5で固定バージョンを再確認する |
-| W5：受入、CI、利用案内 | 受入開始前に対象 OS・端末の具体的なバージョンと組合せを固定する。OS 別の統合テストと CI matrix を整備し、README に導入・実行、保存先、通知権限と失敗、対応端末、制約を記す | 固定した OS・端末のバージョン別に実端末確認と Linux / Windows / macOS の CI を記録し、§6 の受入条件を満たす |
+| W4：通知と端末 | macOS/Windows の通知方式を選定・記録し、通知本文と送信時機を共通化して各 OS の adapter を追加。TUI の起動、入力、画面復元、エラー表示を検証し、必要な箇所を調整 | Rust 1.86の各OS CIでビルド・共通テストを通し、保存成功前に通知せず、通知失敗でデータを失わない。macOSの通知スクリプトを送信せずに構文検証し、Linux PTYで端末復元を確認する。実端末でしか確認できない表示・入力はW5へ明示的に引き継ぐ |
+| W5：受入、CI、利用案内 | 受入開始前に対象 OS・端末の具体的なバージョンと組合せを固定する。OS 別の統合テストと CI matrix を整備し、README に導入・実行、保存先、通知権限と失敗、対応端末、制約を記す | 固定した OS・端末のバージョン別に通知の実表示、主要キー・貼付け・リサイズ・復旧画面・画面復元を確認し、Linux / Windows / macOS の CI を記録して§6 の受入条件を満たす |
 
 W2 と W3 は別 PR にし、それぞれの対象 OS で保存の性質を確認してから W4 に進む。W2/W3で保存 policy を各OSへ公開する際は Linux の既存の失敗注入テストを維持する。後続 PR が未着手でも、先行 PR は対応済みと誤認させる表示や文書を追加しない。
 

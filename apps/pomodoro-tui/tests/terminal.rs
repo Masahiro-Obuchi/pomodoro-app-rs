@@ -17,7 +17,7 @@ use pomodoro_core::{
 use pomodoro_platform::{LoadOutcome, StorageLocation, WritableStorage};
 use rustix::{
     pty::{OpenptFlags, ioctl_tiocgptpeer, openpt, unlockpt},
-    termios::{Winsize, tcsetwinsize},
+    termios::{LocalModes, Winsize, tcgetattr, tcsetwinsize},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -37,6 +37,8 @@ fn terminal_probe() {
 struct Tui {
     child: Child,
     input: File,
+    terminal_modes: File,
+    initial_local_modes: LocalModes,
     output: Receiver<Vec<u8>>,
     received: Vec<u8>,
 }
@@ -61,6 +63,8 @@ impl Tui {
             },
         )
         .unwrap();
+        let initial_local_modes = tcgetattr(&slave).unwrap().local_modes;
+        let terminal_modes = slave.try_clone().unwrap();
         let input = File::from(master);
         let child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "terminal_probe", "--ignored", "--nocapture"])
@@ -84,6 +88,8 @@ impl Tui {
         Self {
             child,
             input,
+            terminal_modes,
+            initial_local_modes,
             output,
             received: Vec::new(),
         }
@@ -124,6 +130,11 @@ impl Tui {
         let deadline = Instant::now() + TIMEOUT;
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
+                assert_eq!(
+                    tcgetattr(&self.terminal_modes).unwrap().local_modes,
+                    self.initial_local_modes,
+                    "TUI must restore the terminal's local modes before exiting"
+                );
                 return status;
             }
             assert!(Instant::now() < deadline, "TUI did not exit");
