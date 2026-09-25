@@ -7,7 +7,7 @@ use std::{
     path::Path,
     process::{Command, Stdio},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use fs4::FileExt;
@@ -57,7 +57,16 @@ fn probe_nonblocking_file_lock_across_processes() {
     let busy = child_lock_result(&path);
     assert!(busy.contains("WouldBlock"), "unexpected contention: {busy}");
     drop(first);
-    let released = child_lock_result(&path);
+    // On Unix, a parallel test can briefly retain the open file description
+    // while its child starts. Bound the wait so a genuine leaked lock fails.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let released = loop {
+        let result = child_lock_result(&path);
+        if !result.contains("WouldBlock") || Instant::now() >= deadline {
+            break result;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
     assert_eq!(released, "Ok(())", "lock did not release: {released}");
 }
 
