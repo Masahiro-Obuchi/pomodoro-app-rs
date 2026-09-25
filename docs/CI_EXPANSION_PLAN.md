@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-26
 
-状態：計画策定。実装は未着手。完了済みPhase 0–4とWindows/macOS W5aの進捗は変更しない。W5bの実端末受入は独立して保留する。
+状態：CI-1～4を下書きPR #43～#46として提出し、CI結果を確認中。CI-5のmain必須チェック設定とmain pushの確認は未実施。完了済みPhase 0–4とWindows/macOS W5aの進捗は変更しない。W5bの実端末受入は独立して保留する。
 
 基準となる[W5aの4 OS CI実行](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36166647526)は全job成功。後続PRでは同じ検証の有無と実行時間を比較する。
 
@@ -58,3 +58,16 @@ CI-4以降はRust 1.86の4 OS jobとLinux stable jobを文書だけのPRにも�
 - W5bの実端末受入は未完了のまま記録し、CIの成功をWindows Terminal・Terminal.appや通知の実表示の証拠として扱わない。
 
 実装で仕様上の振る舞いを変える必要が生じた場合は、対応するProduct Spec・Domain Model・Persistence Schemaを先に更新する。テストとCIの構成だけを変えるPRでは保存契約やユーザー操作を変更しない。
+
+## 6. 実行記録
+
+| 単位 | PR | 検証run |
+| --- | --- | --- |
+| CI-1：全PR・main push・手動起動、権限、4 OS check名 | [#43](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/43) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171280904) |
+| CI-2：coreのみの失敗診断 | [#44](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/44) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171445104) |
+| CI-3：現在画面と未保存終了のネイティブ端末テスト | [#45](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/45) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171549349) |
+| CI-4：Linux stable jobと版記録 | [#46](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/46) | [5 job](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171604346) |
+
+job名は`Rust 1.86 / ubuntu-24.04`、`Rust 1.86 / windows-2025`、`Rust 1.86 / macos-15`、`Rust 1.86 / macos-15-intel`、`Rust stable / ubuntu-24.04`。PRのcheck結果・実行時間を確認し、スタックをmainへマージした後のpush実行を確認してからCI-5を適用する。
+
+ローカルではRust 1.86のformat・clippy・platform probe・workspace test・保存中断テスト・build、Rust stable 1.94.0のworkspace test・buildが成功した。CIの疑似端末はW5bの実端末受入に含めない。
