@@ -8,7 +8,7 @@
 
 ## CIで確認する範囲
 
-[W5a CI実行 #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36161680731)で次の4 jobが成功した。各jobでformat、clippy、workspace全テスト・ビルド、保存probe、保存途中の子プロセス強制終了を実行した。
+[W5a CI実行 #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36165495756)で次の4 jobが成功した。各jobでformat、clippy、workspace全テスト・ビルド、保存probe、保存途中の子プロセス強制終了を実行した。
 
 | 対象 | CI runner | 確認すること | 結果 |
 | --- | --- | --- | --- |
