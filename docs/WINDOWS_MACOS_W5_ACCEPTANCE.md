@@ -8,7 +8,7 @@
 
 ## CIで確認する範囲
 
-[W5 CI実行 #37](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36143584474)で次の4 jobが成功した。各jobでformat、clippy、workspace全テスト・ビルド、保存probe、保存途中の子プロセス強制終了を実行した。
+[W5 CI実行 #41](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36161680731)で次の4 jobが成功した。各jobでformat、clippy、workspace全テスト・ビルド、保存probe、保存途中の子プロセス強制終了を実行した。
 
 | 対象 | CI runner | 確認すること | 結果 |
 | --- | --- | --- | --- |
@@ -19,7 +19,7 @@
 
 OS共通の疑似端末テストは、`POMODORO_STATE_DIR`で隔離した保存先に対する初回起動、Unicode作業名の貼付け、Focus開始、リサイズ、割り込み・復帰、終了・再起動を通す。保存失敗時には24×20の画面で再試行・未保存終了キーを確認し、同じ候補の再試行後に割り込み記録が残ることも確認する。破損した本体からの復旧では、利用者の同意前に本体を変更しないことを確認する。環境変数を設定しない通常起動はOSの既定保存先を使い、空値は起動前に拒否する。これらはWindows TerminalやTerminal.appでの表示、通知バナー、通常ユーザー権限での保存、GUI端末の復元を代行しない。
 
-Windowsの疑似端末にはConPTYを使う。CIのheadless環境では、PTYライブラリが要求する起動時のカーソル位置応答をテスト側から送って画面の出力待ちを解除する。これはWindows Terminalそのものの挙動の検証ではない。先行CIでLinuxの既存ロックprobeが一度、プロセス終了直後の一時的な`WouldBlock`で失敗したため、漏れたロックは失敗させたまま1秒だけ解放を待つよう調整した。最終CIで再確認する。
+Windowsの疑似端末にはConPTYを使う。CIのheadless環境では、PTYライブラリが要求する起動時のカーソル位置応答をテスト側から送って画面の出力待ちを解除する。これはWindows Terminalそのものの挙動の検証ではない。先行CIでLinuxの既存ロックprobeが一度、プロセス終了直後の一時的な`WouldBlock`で失敗したため、漏れたロックは失敗させたまま1秒だけ解放を待つよう調整した。CI実行 #41 ではこのprobeを含め4 jobが成功した。
 
 ## 実端末の対象と版
 
