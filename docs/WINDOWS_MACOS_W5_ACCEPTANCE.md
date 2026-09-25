@@ -36,10 +36,10 @@ Windowsの疑似端末にはConPTYを使う。CIのheadless環境では、PTYラ
 
 ## 実端末での手順と期待結果
 
-既存の作業データを触らないよう、各OSで新しいローカルテストユーザーを用意する。通常実行の保存先はLinuxでは`$XDG_STATE_HOME/pomodoro-app-rs`（未設定なら`~/.local/state/pomodoro-app-rs`）、WindowsではユーザーのローカルAppData配下の`pomodoro-app-rs`、macOSでは`~/Library/Application Support/pomodoro-app-rs`である。各保存先に`state.json`、`state.json.bak`、`state.lock`が置かれる。テスト中も別のユーザーの保存先を編集しない。
+既存の作業データを触らないよう、各OSで新しいローカルテストユーザーを用意する。通常実行の保存先はLinuxでは`$XDG_STATE_HOME/pomodoro-app-rs`（未設定なら`~/.local/state/pomodoro-app-rs`）、WindowsではユーザーのローカルAppData配下の`pomodoro-app-rs`、macOSでは`~/Library/Application Support/pomodoro-app-rs`である。新規の保存先ではロック取得時に`state.lock`、初回保存で`state.json`が置かれ、`state.json.bak`は次の保存で既存の本体を置き換えたときに作られる。テスト中も別のユーザーの保存先を編集しない。
 
-1. Rust 1.86以上で`cargo run -p pomodoro-tui`を起動する。既定のFocus 25分・Short Break 5分・Long Break 15分・4 FocusごとのLong Break、Focus開始待ち、ラウンド進捗0、空履歴を画面と初回保存値で照合する。
-2. `t`で日本語・結合文字・複合絵文字の作業名を入力・貼付けし、保存後に再起動して同じ値が表示されることを確認する。複数行と制御文字を含む貼付けは拒否理由が見え、保存値に入らないことを確認する。
+1. Rust 1.86以上で`cargo run -p pomodoro-tui`を起動する。既定のFocus 25分・Short Break 5分・Long Break 15分・4 FocusごとのLong Break、Focus開始待ち、ラウンド進捗0、空履歴を画面と初回保存値で照合する。初回保存直後は`state.json.bak`がまだ存在しないことも確認する。
+2. `t`で日本語・結合文字・複合絵文字の作業名を入力・貼付けし、保存後に再起動して同じ値が表示されることを確認する。この2回目の保存後に`state.json.bak`が作られ、その内容が初回の`state.json`と一致することを確認する。複数行と制御文字を含む貼付けは拒否理由が見え、保存値に入らないことを確認する。
 3. `2`でQuick Startを始め、Pause、Distraction（`d`）、Return（`Space`）、History（`h`）、リサイズを試す。30×25、24×20、24×9の画面で操作キーや拡大案内が見えることを確認する。`r`でResetした後も`t`で作業名を編集できることを確認する。
 4. Quick Startを完了させ、OSの通知表示と未確定の`f`/`c`選択を確認する。`c`ならFocusの全25分が新たに始まること、終了・再起動後も選択が待ち状態にあることを確認する。Focus・Short Break・Long Breakの完了通知も短い設定値を使って確認する。通知は保存後にのみ送られ、表示失敗時も保存済みの完了が失われないことを照合する。
 5. 保存失敗画面は隔離したテストユーザーでのみ作る。実行中に既存の`state.json.bak`を保存ディレクトリの外へ退避し、同名の空ディレクトリを作って次の保存を試す。`r: Retry save`、`Q: Confirm unsaved exit`、失敗理由が狭い画面でも見えることを確認する。空ディレクトリを取り除いて`r`を押し、同じ候補が保存されることを確認する。別の試行では`Q`→`y`で未保存終了し、終了コードが非0で、最後の確定済みデータが残ることを確認する。
@@ -59,7 +59,7 @@ Windowsの疑似端末にはConPTYを使う。CIのheadless環境では、PTYラ
 | Windows | ローカルAppDataの`pomodoro-app-rs` | WinRT toast。現状はPowerShellの通知元IDを借用し、通知設定によって表示されない場合がある。通常ユーザー権限と表示を実機で確認する |
 | macOS | `~/Library/Application Support/pomodoro-app-rs` | OS付属の`osascript`。通知設定や集中モードで表示されない場合がある。Terminal.appからの実表示を確認する |
 
-各保存先の`state.json`は本体、`state.json.bak`は直前の検証済みバックアップ、`state.lock`は排他用である。ネットワーク・同期フォルダ、Windows ARM、GUI、インストーラーは受入対象外。通知失敗は警告になり、保存済みの完了を巻き戻さない。Windowsの既存祖先ディレクトリの同期と電源断耐性は[保存仕様](PERSISTENCE_SCHEMA.md)の制限をそのまま案内する。ここに記した文面は実端末検証前の候補であり、READMEに掲載する対応宣言ではない。
+各保存先の`state.json`は本体、2回目以降の保存で作られる`state.json.bak`は直前の検証済み本体のバックアップ、`state.lock`は排他用である。ネットワーク・同期フォルダ、Windows ARM、GUI、インストーラーは受入対象外。通知失敗は警告になり、保存済みの完了を巻き戻さない。Windowsの既存祖先ディレクトリの同期と電源断耐性は[保存仕様](PERSISTENCE_SCHEMA.md)の制限をそのまま案内する。ここに記した文面は実端末検証前の候補であり、READMEに掲載する対応宣言ではない。
 
 ## 判定と利用案内
 

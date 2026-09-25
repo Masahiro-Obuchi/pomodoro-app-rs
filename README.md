@@ -54,7 +54,7 @@ The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate expan
 cargo run -p pomodoro-tui
 ```
 
-For an isolated development run, set `POMODORO_STATE_DIR` to a separate application directory before starting the TUI. The directory will contain its own `state.json`, backup, and lock; an empty value is rejected. Without this variable, the normal OS storage location is used. On Linux, for example:
+For an isolated development run, set `POMODORO_STATE_DIR` to a separate application directory before starting the TUI. A new directory gets its own `state.lock` when opened and `state.json` on the first successful save. The next successful save creates `state.json.bak` from that first state; an empty value is rejected. Without this variable, the normal OS storage location is used. On Linux, for example:
 
 ```bash
 POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
@@ -86,7 +86,7 @@ In the Current Task editor, type a single line and press `Enter` to save, or `Es
 
 ### Storage, recovery, and save failures
 
-State and history are stored in `pomodoro-app-rs/state.json` under the user's XDG state directory (`$XDG_STATE_HOME`, or normally `~/.local/state`). The same directory holds `state.json.bak` and `state.lock`. A second instance using that directory is rejected. The lock file remains after exit; its existence alone does not mean another instance is running.
+State and history are stored in `pomodoro-app-rs/state.json` under the user's XDG state directory (`$XDG_STATE_HOME`, or normally `~/.local/state`). The same directory holds `state.lock`; `state.json.bak` appears after a later successful save replaces the first state. A second instance using that directory is rejected. The lock file remains after exit; its existence alone does not mean another instance is running.
 
 Startup validates the entire V1 file before allowing normal operation. Old unversioned data and unsupported versions stop startup without being overwritten or automatically replaced from backup. To start fresh, stop all instances and explicitly move the old application state directory aside, or select a separate empty XDG state directory. Settings and history from the old format are not imported.
 
