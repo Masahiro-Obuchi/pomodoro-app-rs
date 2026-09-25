@@ -40,3 +40,5 @@ mod regression;
 mod retry;
 #[cfg(unix)]
 mod temporary_files;
+#[cfg(windows)]
+mod windows;
