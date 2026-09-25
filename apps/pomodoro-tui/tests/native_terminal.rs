@@ -156,6 +156,8 @@ fn without_csi(bytes: &[u8]) -> String {
                     break;
                 }
             }
+        } else if ch == '\u{8}' {
+            result.pop();
         } else {
             result.push(ch);
         }
