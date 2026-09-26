@@ -34,6 +34,7 @@ struct Tui {
     writer: Box<dyn Write + Send>,
     output: Receiver<Vec<u8>>,
     received: Vec<u8>,
+    screen: vt100::Parser,
 }
 
 impl Tui {
@@ -78,6 +79,7 @@ impl Tui {
             writer,
             output,
             received: Vec::new(),
+            screen: vt100::Parser::new(height, width, 0),
         }
     }
 
@@ -104,7 +106,10 @@ impl Tui {
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.output.recv_timeout(remaining) {
-                Ok(bytes) => self.received.extend(bytes),
+                Ok(bytes) => {
+                    self.screen.process(&bytes);
+                    self.received.extend(bytes);
+                }
                 Err(error) => panic!(
                     "waiting for {phrases:?}: {error}; child: {:?}; output: {emitted}",
                     self.child.try_wait().unwrap()
@@ -113,12 +118,73 @@ impl Tui {
         }
     }
 
+    fn expect_screen(&mut self, phrase: &str) {
+        self.expect_screen_all(&[phrase]);
+    }
+
+    fn expect_screen_all(&mut self, phrases: &[&str]) {
+        let compact = |text: &str| {
+            text.chars()
+                .filter(|ch| {
+                    !ch.is_whitespace() && !matches!(ch, '│' | '─' | '┌' | '┐' | '└' | '┘')
+                })
+                .collect::<String>()
+        };
+        let expected: Vec<_> = phrases.iter().map(|phrase| compact(phrase)).collect();
+        let deadline = Instant::now() + TIMEOUT;
+        loop {
+            let screen = self.screen.screen().contents();
+            let visible = compact(&screen);
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(
+                !remaining.is_zero(),
+                "waiting for current screen {phrases:?}; screen: {screen:?}"
+            );
+            if expected.iter().all(|phrase| visible.contains(phrase)) {
+                // Apply more than one 100 ms redraw before accepting a snapshot.
+                let settle_until = Instant::now() + Duration::from_millis(250);
+                while let Some(wait) = settle_until.checked_duration_since(Instant::now()) {
+                    match self.output.recv_timeout(wait) {
+                        Ok(bytes) => self.screen.process(&bytes),
+                        Err(mpsc::RecvTimeoutError::Timeout) => break,
+                        Err(error) => panic!(
+                            "waiting for current screen {phrases:?}: {error}; screen: {screen:?}"
+                        ),
+                    }
+                }
+                let settled = self.screen.screen().contents();
+                if expected
+                    .iter()
+                    .all(|phrase| compact(&settled).contains(phrase))
+                {
+                    return;
+                }
+                continue;
+            }
+            match self.output.recv_timeout(remaining) {
+                Ok(bytes) => self.screen.process(&bytes),
+                Err(error) => panic!(
+                    "waiting for current screen {phrases:?}: {error}; child: {:?}; screen: {screen:?}",
+                    self.child.try_wait().unwrap()
+                ),
+            }
+        }
+    }
+
+    fn assert_screen_absent(&self, phrase: &str) {
+        let screen = self.screen.screen().contents();
+        assert!(
+            !screen.contains(phrase),
+            "unexpected {phrase:?} on current screen: {screen:?}"
+        );
+    }
+
     fn send(&mut self, keys: &[u8]) {
         self.writer.write_all(keys).unwrap();
         self.writer.flush().unwrap();
     }
 
-    fn resize(&self, width: u16, height: u16) {
+    fn resize(&mut self, width: u16, height: u16) {
         self.master
             .resize(PtySize {
                 rows: height,
@@ -127,14 +193,14 @@ impl Tui {
                 pixel_height: 0,
             })
             .unwrap();
+        self.screen.screen_mut().set_size(height, width);
     }
 
-    fn finish(mut self) {
+    fn finish(mut self) -> portable_pty::ExitStatus {
         let deadline = Instant::now() + TIMEOUT;
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
-                assert!(status.success(), "PTY helper exited with {status:?}");
-                return;
+                return status;
             }
             assert!(Instant::now() < deadline, "PTY helper did not exit");
             std::thread::sleep(Duration::from_millis(5));
@@ -192,7 +258,7 @@ fn native_pty_can_edit_start_resize_and_restore_saved_state() {
     tui.expect("Distraction saved");
     tui.send(b" ");
     tui.send(b"q");
-    tui.finish();
+    assert!(tui.finish().success());
 
     let LoadOutcome::Loaded(store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("expected saved V1 state");
@@ -213,7 +279,7 @@ fn native_pty_can_edit_start_resize_and_restore_saved_state() {
     let mut tui = Tui::spawn(location.directory(), 100, 30);
     tui.expect("原稿を書く");
     tui.send(b"q");
-    tui.finish();
+    assert!(tui.finish().success());
 }
 
 #[test]
@@ -230,7 +296,7 @@ fn native_pty_requires_consent_before_recovering_a_broken_primary() {
     tui.send(b"y");
     tui.expect("Focus");
     tui.send(b"q");
-    tui.finish();
+    assert!(tui.finish().success());
 
     let LoadOutcome::Loaded(store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("expected recovered V1 state");
@@ -261,13 +327,17 @@ fn native_pty_keeps_save_recovery_keys_visible_and_retries_the_same_candidate() 
         fs::read(location.state_path()).unwrap(),
         saved_before_failure
     );
+    tui.resize(24, 9);
+    tui.expect_screen("Enlarge terminal to show save recovery controls.");
+    tui.assert_screen_absent("Retry save");
     tui.resize(24, 20);
-    tui.expect_all(&["r: Retry save", "Q: Confirm unsaved exit"]);
+    tui.expect_screen_all(&["r: Retry save", "Q: Confirm unsaved exit"]);
+    tui.assert_screen_absent("Enlarge terminal");
     fs::remove_dir(location.backup_path()).unwrap();
     tui.send(b"r");
     tui.expect("Distraction saved");
     tui.send(b"q");
-    tui.finish();
+    assert!(tui.finish().success());
 
     let LoadOutcome::Loaded(store) = location.clone().lock().unwrap().load().unwrap() else {
         panic!("expected saved V1 state");
@@ -281,5 +351,65 @@ fn native_pty_keeps_save_recovery_keys_visible_and_retries_the_same_candidate() 
             .unwrap()
             .distractions,
         1
+    );
+}
+
+#[test]
+fn native_pty_exits_unsaved_without_committing_candidate_and_releases_lock() {
+    let directory = tempfile::tempdir().unwrap();
+    let location = StorageLocation::at(directory.path().join("state"));
+    let mut tui = Tui::spawn(location.directory(), 100, 30);
+    tui.expect("Space: Start");
+    tui.send(b" ");
+    tui.expect("Session started and saved");
+    let saved_before_failure = fs::read(location.state_path()).unwrap();
+    fs::remove_file(location.backup_path()).unwrap();
+    fs::create_dir(location.backup_path()).unwrap();
+    tui.send(b"d");
+    tui.expect("Could not confirm save");
+    tui.resize(24, 20);
+    tui.expect_screen_all(&["r: Retry save", "Q: Confirm unsaved exit"]);
+    tui.send(b"Q");
+    tui.expect_screen("y: Exit unsaved");
+    tui.assert_screen_absent("Retry save");
+    tui.send(b"y");
+    assert!(!tui.finish().success());
+
+    assert_eq!(
+        fs::read(location.state_path()).unwrap(),
+        saved_before_failure
+    );
+    let LoadOutcome::Loaded(store) = location.clone().lock().unwrap().load().unwrap() else {
+        panic!("expected the last confirmed V1 state");
+    };
+    assert_eq!(
+        store
+            .saved_state()
+            .unwrap()
+            .domain()
+            .reflection()
+            .unwrap()
+            .distractions,
+        0
+    );
+    drop(store);
+
+    fs::remove_dir(location.backup_path()).unwrap();
+    let mut tui = Tui::spawn(location.directory(), 100, 30);
+    tui.expect("Awaiting Resume");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+    let LoadOutcome::Loaded(store) = location.clone().lock().unwrap().load().unwrap() else {
+        panic!("expected saved V1 state after restart");
+    };
+    assert_eq!(
+        store
+            .saved_state()
+            .unwrap()
+            .domain()
+            .reflection()
+            .unwrap()
+            .distractions,
+        0
     );
 }
