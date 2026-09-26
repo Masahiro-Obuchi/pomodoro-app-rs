@@ -1,0 +1,93 @@
+name: Linux preview release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release eligibility
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tag: ${{ steps.eligibility.outputs.tag }}
+      main_run_id: ${{ steps.eligibility.outputs.main_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch current main for ancestry check
+        run: git fetch origin main
+      - name: Check version, main CI and existing Release
+        id: eligibility
+        run: python3 scripts/check-release-eligibility.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test release rejection rules
+        run: python3 -m unittest discover -s scripts -p test_release_eligibility.py
+
+  build:
+    name: Build Linux release archive
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install minimum Rust toolchain
+        run: rustup toolchain install 1.86.0 --profile minimal
+      - name: Package and verify Linux release binary
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          bash scripts/package-linux-release.sh "$RELEASE_TAG"
+          mkdir -p "$RUNNER_TEMP/pomodoro-release-smoke"
+          tar -xzf dist/pomodoro-tui-*.tar.gz -C "$RUNNER_TEMP/pomodoro-release-smoke"
+          release_bin="$(find "$RUNNER_TEMP/pomodoro-release-smoke" -type f -name pomodoro-tui -print -quit)"
+          test -n "$release_bin"
+          POMODORO_TUI_TEST_BIN="$release_bin" cargo +1.86.0 test --locked -p pomodoro-tui --test native_terminal
+      - name: Upload verified files
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-${{ needs.verify.outputs.tag }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish Linux prerelease
+    if: github.event_name == 'push'
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download verified files
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release-${{ needs.verify.outputs.tag }}
+          path: dist
+      - name: Publish the existing tag as a prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          test -f dist/SHA256SUMS
+          (cd dist && sha256sum --check SHA256SUMS)
+          cp "docs/releases/${RELEASE_TAG}.md" "$RUNNER_TEMP/release-notes.md"
+          printf '\nSource commit: `%s`\n' "$GITHUB_SHA" >> "$RUNNER_TEMP/release-notes.md"
+          gh release create "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS \
+            --verify-tag --prerelease --latest=false \
+            --title "$RELEASE_TAG preview" --notes-file "$RUNNER_TEMP/release-notes.md"
