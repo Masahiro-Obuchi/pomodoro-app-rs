@@ -55,6 +55,8 @@ jobs:
         run: |
           rustc +stable --version
           cargo +stable --version
+      - name: Deliberate failure to verify required stable check
+        run: exit 1
       - name: Test workspace including native PTY workflows
         run: cargo +stable test --locked --workspace
       - name: Build workspace
