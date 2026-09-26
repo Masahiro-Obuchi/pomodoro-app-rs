@@ -18,9 +18,10 @@ const VALID: &[u8] =
     include_bytes!("../../../crates/pomodoro-platform/tests/fixtures/state_v1.json");
 
 fn executable() -> PathBuf {
-    std::env::var_os("POMODORO_TUI_TEST_BIN")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_pomodoro-tui")))
+    std::env::var_os("POMODORO_TUI_TEST_BIN").map_or_else(
+        || PathBuf::from(env!("CARGO_BIN_EXE_pomodoro-tui")),
+        PathBuf::from,
+    )
 }
 
 #[test]
