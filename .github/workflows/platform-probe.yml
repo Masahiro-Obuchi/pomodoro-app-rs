@@ -35,6 +35,9 @@ jobs:
         run: cargo +1.86.0 fmt --all -- --check
       - name: Check workspace lints
         run: cargo +1.86.0 clippy --locked --workspace --all-targets -- -D warnings
+      - name: Test release eligibility rules
+        if: matrix.os == 'ubuntu-24.04'
+        run: python3 -m unittest discover -s scripts -p test_release_eligibility.py
       - name: Probe local filesystem
         run: cargo +1.86.0 test --locked -p pomodoro-platform --test platform_probe -- --nocapture
       - name: Test workspace including native PTY workflows
