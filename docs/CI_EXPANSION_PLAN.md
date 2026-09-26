@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-26
 
-状態：計画策定。実装は未着手。完了済みPhase 0–4とWindows/macOS W5aの進捗は変更しない。W5bの実端末受入は独立して保留する。
+状態：CI-1～4のPR #43～#46はmainへマージ済み。各PRとmain pushで4 OSまたは5 jobが成功。文書のみの[#47](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/47)でも5 jobが成功。CI-5のmain必須チェック設定は未実施。完了済みPhase 0–4とWindows/macOS W5aの進捗は変更しない。W5bの実端末受入は独立して保留する。
 
 基準となる[W5aの4 OS CI実行](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36166647526)は全job成功。後続PRでは同じ検証の有無と実行時間を比較する。
 
@@ -58,3 +58,28 @@ CI-4以降はRust 1.86の4 OS jobとLinux stable jobを文書だけのPRにも�
 - W5bの実端末受入は未完了のまま記録し、CIの成功をWindows Terminal・Terminal.appや通知の実表示の証拠として扱わない。
 
 実装で仕様上の振る舞いを変える必要が生じた場合は、対応するProduct Spec・Domain Model・Persistence Schemaを先に更新する。テストとCIの構成だけを変えるPRでは保存契約やユーザー操作を変更しない。
+
+## 6. 実行記録
+
+| 単位 | PR | PR検証run | main push run |
+| --- | --- | --- | --- |
+| CI-1：全PR・main push・手動起動、権限、4 OS check名 | [#43](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/43) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171280904) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36174178093) |
+| CI-2：coreのみの失敗診断 | [#44](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/44) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171445104) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36174233334) |
+| CI-3：現在画面と未保存終了のネイティブ端末テスト | [#45](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/45) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171549349) | [4 OS](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36257597978) |
+| CI-4：Linux stable jobと版記録 | [#46](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/46) | [5 job](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36171604346) | [5 job](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36257870297) |
+
+job名は`Rust 1.86 / ubuntu-24.04`、`Rust 1.86 / windows-2025`、`Rust 1.86 / macos-15`、`Rust 1.86 / macos-15-intel`、`Rust stable / ubuntu-24.04`。PRとmain pushでこれらの成功を確認した。CI-5で同じ5件を必須checkに設定する。
+
+CI-1の4件、coreだけを変更したCI-2の4件、CI-3の4件、CI-4の5件はすべて成功。文書のみの[#47](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/47)にも5件のjobが生成された。基準runとCI-4 runの各job実行時間は次の通り（秒、runner待機時間を除く）。
+
+| OS / toolchain | 基準W5a | CI-4 |
+| --- | ---: | ---: |
+| Linux / Rust 1.86 | 60 | 50 |
+| Windows / Rust 1.86 | 206 | 165 |
+| macOS Apple Silicon / Rust 1.86 | 52 | 76 |
+| macOS Intel / Rust 1.86 | 294 | 194 |
+| Linux / stable | 対象外 | 48 |
+
+mainの既存rulesetは`branch-rule`（ID `19439486`）。現在の削除禁止、強制push禁止、PR必須、Copilotレビューの各規則を維持して、上記5件を必須checkとして追加する。GitHub Actionsのcheckの発行元App IDは`15368`。
+
+ローカルではRust 1.86のformat・clippy・platform probe・workspace test・保存中断テスト・build、Rust stable 1.94.0のworkspace test・buildが成功した。CIの疑似端末はW5bの実端末受入に含めない。
