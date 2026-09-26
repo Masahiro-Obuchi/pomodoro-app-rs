@@ -43,6 +43,24 @@ jobs:
         run: cargo +1.86.0 test --locked -p pomodoro-platform --lib crash_boundaries_in_isolated_process -- --ignored
       - name: Build workspace
         run: cargo +1.86.0 build --locked --workspace
+      - name: Build and exercise Linux release archive
+        if: matrix.os == 'ubuntu-24.04'
+        shell: bash
+        run: |
+          bash scripts/package-linux-release.sh
+          mkdir -p "$RUNNER_TEMP/pomodoro-release-smoke"
+          tar -xzf dist/pomodoro-tui-*.tar.gz -C "$RUNNER_TEMP/pomodoro-release-smoke"
+          release_bin="$(find "$RUNNER_TEMP/pomodoro-release-smoke" -type f -name pomodoro-tui -print -quit)"
+          test -n "$release_bin"
+          POMODORO_TUI_TEST_BIN="$release_bin" cargo +1.86.0 test --locked -p pomodoro-tui --test native_terminal
+      - name: Upload Linux release archive for inspection
+        if: matrix.os == 'ubuntu-24.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-dry-run
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
 
   stable-rust:
     name: Rust stable / ubuntu-24.04

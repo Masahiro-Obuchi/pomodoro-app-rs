@@ -3,7 +3,7 @@
 use std::{
     fs,
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     sync::mpsc::{self, Receiver},
     time::{Duration, Instant},
@@ -17,9 +17,16 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 const VALID: &[u8] =
     include_bytes!("../../../crates/pomodoro-platform/tests/fixtures/state_v1.json");
 
+fn executable() -> PathBuf {
+    std::env::var_os("POMODORO_TUI_TEST_BIN").map_or_else(
+        || PathBuf::from(env!("CARGO_BIN_EXE_pomodoro-tui")),
+        PathBuf::from,
+    )
+}
+
 #[test]
 fn empty_state_directory_override_stops_before_terminal_setup() {
-    let output = Command::new(env!("CARGO_BIN_EXE_pomodoro-tui"))
+    let output = Command::new(executable())
         .env("POMODORO_STATE_DIR", "")
         .output()
         .unwrap();
@@ -47,7 +54,7 @@ impl Tui {
                 pixel_height: 0,
             })
             .unwrap();
-        let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_pomodoro-tui"));
+        let mut command = CommandBuilder::new(executable());
         command.env("POMODORO_STATE_DIR", directory);
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         command.env("TERM", "xterm-256color");
