@@ -91,6 +91,41 @@ class ReleaseEligibilityTests(unittest.TestCase):
                     release.main()
                 self.assertIn("tag=v0.1.0", Path(environment["GITHUB_OUTPUT"]).read_text())
 
+    def test_local_source_guards_block_publication(self):
+        sha = "a" * 40
+        other_sha = "b" * 40
+        environment = {
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_REF": "refs/tags/v0.1.0",
+            "GITHUB_SHA": sha,
+        }
+        with (
+            patch.dict(os.environ, environment),
+            patch.object(release, "package_version", return_value="0.1.0"),
+            patch.object(release, "api", side_effect=AssertionError("API reached before local guards")),
+        ):
+            with patch.object(release, "git", return_value=other_sha):
+                with self.assertRaisesRegex(ValueError, "checkout does not match"):
+                    release.main()
+            with (
+                patch.object(release, "git", return_value=sha),
+                patch.object(release.Path, "is_file", return_value=False),
+            ):
+                with self.assertRaisesRegex(ValueError, "missing release notes"):
+                    release.main()
+            with (
+                patch.object(release, "git", return_value=sha),
+                patch.object(release.subprocess, "run", return_value=SimpleNamespace(returncode=1)),
+            ):
+                with self.assertRaisesRegex(ValueError, "not in main"):
+                    release.main()
+            with (
+                patch.object(release, "git", side_effect=[sha, other_sha]),
+                patch.object(release.subprocess, "run", return_value=SimpleNamespace(returncode=0)),
+            ):
+                with self.assertRaisesRegex(ValueError, "tag points to another commit"):
+                    release.main()
+
 
 if __name__ == "__main__":
     unittest.main()
