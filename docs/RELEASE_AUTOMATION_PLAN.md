@@ -2,11 +2,11 @@
 
 作成日（日本時間）：2026-09-27
 
-状態：REL-1の配布物検査は[PR #50](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/50)、REL-2のタグ用workflowは[PR #51](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/51)でmainにマージ済み。REL-3の設定は有効。REL-4のタグとGitHub Releaseは未作成。
+状態：REL-1～4完了。Linux x86_64向けの[v0.1.0プレリリース](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/releases/tag/v0.1.0)を公開し、公開後の配布物検査まで成功。Windows/macOSの実端末受入は継続。
 
 ## 1. 出発点と最初の公開範囲
 
-- [CI拡充計画](CI_EXPANSION_PLAN.md)のCI-1～5は完了し、mainへのマージにはRust 1.86の4 OSとLinux stableの計5件の成功が必要。配布用workflowはまだない。
+- 計画着手時点で[CI拡充計画](CI_EXPANSION_PLAN.md)のCI-1～5は完了し、mainへのマージにはRust 1.86の4 OSとLinux stableの計5件の成功が必要だった。
 - `pomodoro-tui`の版はworkspaceの`0.1.0`を使う。計画時点でGitHub Releaseとタグはない。READMEが対応済みと案内しているのはLinuxのみ。
 - 最初はGitHub Releasesに**Linux x86_64のプレリリース**を自動公開する。初回タグ候補は`v0.1.0`。GitHub上のプレリリース指定とCargoの版を区別し、タグの`v`を除いた値が`pomodoro-tui`の版と完全一致するようにする。
 - 公開のきっかけは、5件のmain push検証が成功したコミットへの**手動タグ付け**とする。mainの各マージから自動で版やタグを作らない。タグのpush後、配布workflowが検証、ビルド、公開まで行う。
@@ -69,5 +69,8 @@
 | REL-1 | [PR #50](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/50)をマージ。[main push 5 job](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36264674274)が成功。Rust 1.86でアーカイブを作り、展開したバイナリにネイティブPTYテストを実施 |
 | REL-2 | [PR #51](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/51)をマージ。[main push 5 job](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36265568588)が成功。[手動検証](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36265852901)で公開可否の確認と配布物ビルドが成功し、公開jobはスキップ。ダウンロードしたアーカイブのSHA-256と内容を照合し、Releaseが未作成であることを確認 |
 | REL-3 | 既存のmain用`branch-rule`（ID `19439486`）を維持し、`refs/tags/v*`の更新・削除を禁止するactiveな[tag ruleset](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/settings/rules/24048572)（ID `24048572`）を追加。Release immutable設定は有効 |
+| REL-4 | [PR #52](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/52)で公開後の実物検査を追加。タグ`v0.1.0`はmainの`cdabc78292b336dd4c2c9eb2744ee4263c4713c6`を指す。同じSHAの[main push CI](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36293169756)で必須5 jobが成功し、[手動検証](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36293515421)は公開jobをスキップ。[タグ起動の配布workflow](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36293680302)で検証・ビルド・公開・公開後検査の4 jobが成功し、[v0.1.0プレリリース](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/releases/tag/v0.1.0)を公開 |
 
-配布物をUbuntu 22.04（glibc 2.35）のローカル環境で起動すると、glibc 2.38/2.39のシンボルがなく停止した。公開対象のUbuntu 24.04 runnerでは展開したバイナリのPTYテストが成功している。REL-4では公開後にReleaseからダウンロードした実物をUbuntu 24.04 runnerで再検査する。
+REL-1のmain pushでは[CI拡充計画に記録した5件のjob名](CI_EXPANSION_PLAN.md#6-実行記録)が維持された。Linux Rust 1.86 jobの実行時間は88秒で、CI-4時点の50秒から38秒増加した（runner待機時間を除く）。タグを付けたREL-4のmain pushでも同じ5件が成功した。
+
+REL-4でReleaseからアーカイブと`SHA256SUMS`をダウンロードし、`sha256sum --check`が成功した。アーカイブ`pomodoro-tui-v0.1.0-x86_64-unknown-linux-gnu.tar.gz`のSHA-256は`775f6c48aef178b14b00f2df4e2daf313ca2ca7d714e88e50d9e0b7872f8d500`。内容は実行ファイル、`LICENSE`、`README.md`。公開後検査jobはUbuntu 24.04上でダウンロードした実行ファイルにネイティブPTYテストを通した。Ubuntu 22.04（glibc 2.35）のローカル環境ではglibc 2.38/2.39のシンボルがなく起動できない。この制限はリリースノートに明記した。

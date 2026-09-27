@@ -44,11 +44,16 @@ The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate expan
 ## Requirements
 
 - Linux with a local filesystem for saved state
-- Rust 1.86 or later
 - A terminal supported by Crossterm
 - `notify-send` for Linux desktop notifications (optional)
 
+## Linux prerelease
+
+The [v0.1.0 prerelease](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/releases/tag/v0.1.0) provides a Linux x86_64 binary built and tested on Ubuntu 24.04. It requires glibc 2.39. Download the archive and `SHA256SUMS` from the release, verify them with `sha256sum --check SHA256SUMS`, then extract the archive and run `./pomodoro-tui` from its directory. Rust is not needed to run this binary. Other Linux distributions have not been validated with it.
+
 ## Run the TUI
+
+Building from source requires Rust 1.86 or later.
 
 ```bash
 cargo run -p pomodoro-tui
