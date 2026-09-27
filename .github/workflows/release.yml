@@ -28,6 +28,8 @@ jobs:
           fetch-depth: 0
       - name: Fetch current main for ancestry check
         run: git fetch origin main
+      - name: Confirm release CLI supports existing-tag guard
+        run: gh release create --help | grep -F -- '--verify-tag'
       - name: Check version, main CI and existing Release
         id: eligibility
         run: python3 scripts/check-release-eligibility.py
@@ -89,5 +91,31 @@ jobs:
           cp "docs/releases/${RELEASE_TAG}.md" "$RUNNER_TEMP/release-notes.md"
           printf '\nSource commit: `%s`\n' "$GITHUB_SHA" >> "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS \
-            --verify-tag --prerelease --latest=false \
+            --verify-tag --prerelease \
             --title "$RELEASE_TAG preview" --notes-file "$RUNNER_TEMP/release-notes.md"
+
+  verify-published:
+    name: Verify downloaded Linux prerelease
+    if: github.event_name == 'push'
+    needs: [verify, build, publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install minimum Rust toolchain
+        run: rustup toolchain install 1.86.0 --profile minimal
+      - name: Download and exercise published archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/pomodoro-release-downloaded" "$RUNNER_TEMP/pomodoro-release-extracted"
+          gh release download "$RELEASE_TAG" --dir "$RUNNER_TEMP/pomodoro-release-downloaded"
+          (cd "$RUNNER_TEMP/pomodoro-release-downloaded" && sha256sum --check SHA256SUMS)
+          tar -xzf "$RUNNER_TEMP/pomodoro-release-downloaded/pomodoro-tui-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz" \
+            -C "$RUNNER_TEMP/pomodoro-release-extracted"
+          release_bin="$RUNNER_TEMP/pomodoro-release-extracted/pomodoro-tui-${RELEASE_TAG}-x86_64-unknown-linux-gnu/pomodoro-tui"
+          test -x "$release_bin"
+          POMODORO_TUI_TEST_BIN="$release_bin" cargo +1.86.0 test --locked -p pomodoro-tui --test native_terminal

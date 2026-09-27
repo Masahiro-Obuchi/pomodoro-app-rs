@@ -2,7 +2,7 @@
 
 作成日（日本時間）：2026-09-27
 
-状態：計画策定。配布用workflow、タグ、GitHub Releaseの作成は未着手。
+状態：REL-1の配布物検査は[PR #50](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/50)、REL-2のタグ用workflowは[PR #51](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/51)でmainにマージ済み。REL-3の設定は有効。REL-4のタグとGitHub Releaseは未作成。
 
 ## 1. 出発点と最初の公開範囲
 
@@ -10,7 +10,7 @@
 - `pomodoro-tui`の版はworkspaceの`0.1.0`を使う。計画時点でGitHub Releaseとタグはない。READMEが対応済みと案内しているのはLinuxのみ。
 - 最初はGitHub Releasesに**Linux x86_64のプレリリース**を自動公開する。初回タグ候補は`v0.1.0`。GitHub上のプレリリース指定とCargoの版を区別し、タグの`v`を除いた値が`pomodoro-tui`の版と完全一致するようにする。
 - 公開のきっかけは、5件のmain push検証が成功したコミットへの**手動タグ付け**とする。mainの各マージから自動で版やタグを作らない。タグのpush後、配布workflowが検証、ビルド、公開まで行う。
-- 初回の配布対象はUbuntu 24.04 x86_64 runnerでビルド・確認した`x86_64-unknown-linux-gnu`のみ。必要なローカルファイルシステムと任意の`notify-send`を利用案内に記し、他のLinux環境での動作をCI結果だけから保証しない。
+- 初回の配布対象はUbuntu 24.04 x86_64 runnerでビルド・確認した`x86_64-unknown-linux-gnu`のみ。配布バイナリはglibc 2.39を要求し、glibc 2.35のUbuntu 22.04では起動しない。必要なローカルファイルシステムと任意の`notify-send`を利用案内に記し、他のLinux環境での動作をCI結果だけから保証しない。
 - crates.io公開、インストーラー、自動更新、Windows ARM、署名・公証はこの初回リリースに含めない。Windows/macOSのバイナリを対応版として公開する条件は§5に置く。
 
 ## 2. 配布物と公開条件
@@ -61,3 +61,13 @@
 - 公開job以外に書込権限を与えず、PRから公開できない。タグ・Releaseの更新と削除が保護される。
 - 配布物をダウンロードした利用者が、チェックサムを照合し、記載した環境で起動できる。公開runと実物確認の証拠を残す。
 - Windows/macOSを対応済みと案内する前にW5bを完了し、次の版で受入済みの配布物だけを追加する。
+
+## 7. 実行記録
+
+| 単位 | 結果 |
+| --- | --- |
+| REL-1 | [PR #50](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/50)をマージ。[main push 5 job](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36264674274)が成功。Rust 1.86でアーカイブを作り、展開したバイナリにネイティブPTYテストを実施 |
+| REL-2 | [PR #51](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/pull/51)をマージ。[main push 5 job](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36265568588)が成功。[手動検証](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/actions/runs/36265852901)で公開可否の確認と配布物ビルドが成功し、公開jobはスキップ。ダウンロードしたアーカイブのSHA-256と内容を照合し、Releaseが未作成であることを確認 |
+| REL-3 | 既存のmain用`branch-rule`（ID `19439486`）を維持し、`refs/tags/v*`の更新・削除を禁止するactiveな[tag ruleset](https://github.com/Masahiro-Obuchi/pomodoro-app-rs/settings/rules/24048572)（ID `24048572`）を追加。Release immutable設定は有効 |
+
+配布物をUbuntu 22.04（glibc 2.35）のローカル環境で起動すると、glibc 2.38/2.39のシンボルがなく停止した。公開対象のUbuntu 24.04 runnerでは展開したバイナリのPTYテストが成功している。REL-4では公開後にReleaseからダウンロードした実物をUbuntu 24.04 runnerで再検査する。
