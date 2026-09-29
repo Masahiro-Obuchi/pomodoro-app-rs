@@ -2,7 +2,7 @@
 
 採用日：2026-09-12
 
-更新日：2026-09-17
+更新日：2026-09-30
 
 この文書は [Product Spec](PRODUCT_SPEC.md) をドメイン上の状態・データ・制約として定義する。今後の実装の設計基準であり、現在のコードがすべて実装済みであることを意味しない。型名・フィールド名は概念上の名称であり、保存JSONの表現やRustの公開APIとは区別する。
 
@@ -51,10 +51,12 @@
 
 1. 観測の連続性、観測空白、時計異常を確認する。
 2. 信頼できる経過時間だけを残り時間の範囲内で反映する。
-3. 設定時間に達した場合、自然完了のドメイン遷移を生成する。
+3. 設定時間に達した場合、自然完了のドメイン遷移を生成し、Focus・Breakなら次のSessionを同じ遷移で開始する。
 4. 対象Sessionがまだ操作可能なら、ユーザー操作を適用する。
 
 Observation Gapは自然完了判定より先に処理する。保存された期限が過ぎたことだけを理由に、Focus・QuickStart・Breakを完了させない。
+
+自然完了の判定に用いた観測時点で次のSessionを開始し、前のSessionの残り時間を超えた観測時間を次へ繰り越さない。自然完了と同時に入力された操作は、開始した新Sessionへ転用しない。
 
 同一プロセス内では最後に確認できた時点、再起動時には保存済みの最終確認時点を計時の境界とする。不明区間を推測して加算しない。
 
@@ -257,7 +259,7 @@ Return時には、アプリ終了中も含めて申告からの経過時間を�
 - `0 <= completed_focuses_in_round <= N`。
 - Focus自然完了で1増やす。Nに達したら長休憩、それ以外は短休憩を用意する。
 - Quick Start、Pause、Distraction、Resume、Returnは進捗を変えない。
-- 長休憩の完了・中止・SkipでFocus開始待ちへ進むとき、0に戻す。
+- 長休憩の自然完了でFocusを自動開始するとき、または中止・SkipでFocus開始待ちへ進むとき、0に戻す。
 - 長休憩のResetでは、長休憩をやり直すため進捗を維持する。
 - 開始前の長休憩をSkipした場合も0に戻すが、実行していないSessionの履歴は作らない。
 
@@ -357,17 +359,17 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 
 | 操作・契機 | 遷移 | snapshot・履歴の変更 |
 | --- | --- | --- |
-| Focus / Quick Start開始 | 作業開始待ち → 実行中 | 開始日時を持つ新Session |
-| Break開始 | 休憩開始待ち → 実行中 | 開始日時を持つ新Session |
+| Focus / Quick Start手動開始 | 作業開始待ち → 実行中 | 開始日時を持つ新Session |
+| Break手動開始 | 休憩開始待ち → 実行中 | 開始日時を持つ新Session |
 | Pause | 実行中 → Pause中 | 区間確定、InterruptionStarted |
 | Distraction | Focus / Quick Start実行中 → Distraction中 | 区間確定、InterruptionStarted |
 | Resume | Pause / AppExit / ObservationGap中 → 実行中 | Resumedで中断終了、新しい実行区間 |
 | Return | Distraction中 → 実行中 | Returnedで中断終了、Recovery Time、新しい実行区間 |
-| Focus自然完了 | 実行中 → 休憩開始待ち | 最終区間、Completed、Historyへの移動、ラウンド更新 |
+| Focus自然完了 | 実行中 → 短休憩／長休憩の実行中 | 最終区間、Completed、Historyへの移動、ラウンド更新、別IDのBreak開始 |
 | Quick Start自然完了 | 実行中 → 継続選択待ち | 最終区間、Completed、Historyへの移動。ラウンドは維持 |
 | Quick Start終了選択 | 継続選択待ち → Focus開始待ち | Finishの選択event。Sessionを再終了しない |
 | Quick Start継続選択 | 継続選択待ち → Focus実行中 | Continueの選択event、開始日時を持つ新Focus |
-| Break自然完了 | 実行中 → Focus開始待ち | Completed、Historyへの移動。長休憩ならラウンドを0へ |
+| Break自然完了 | 実行中 → Focus実行中 | Completed、Historyへの移動、別IDのFocus開始。長休憩ならラウンドを0へ |
 | 中止 | 実行中／中断中 → Focus開始待ち | 区間または中断終了、Cancelled。長休憩ならラウンドを0へ |
 | Reset | 実行中／中断中 → 同じ種別の開始待ち | 区間または中断終了、Reset、Current Taskを下書きへ |
 | FocusのSkip | 実行中／中断中 → 休憩開始待ち | 区間または中断終了、Skipped。完了回数は増やさない |
@@ -377,6 +379,8 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 中断中にSessionを終了すると、InterruptionEndedのSessionEndedという中断結果を、Session本体の終了結果・日時と対応付ける。SessionEndedという名前の履歴eventは設けない。
 
 開始待ちでのResetは無操作とする。開始待ちのSkipは予定の変更だけで、Session履歴を作らない。休憩開始待ちからQuick Startを始める場合は、まず休憩をSkipして作業開始待ちへ戻る。
+
+初回Focusと、Skip・中止・Reset後に予定されたSessionは手動開始とする。自然完了したFocus・Breakから次のSessionを開始する場合だけ、開始待ちを経由しない。自動開始するBreakのCurrent Taskは持たせない。自動開始するFocusのCurrent Taskは、そのBreakより前に最後に終了したFocusの値を引き継ぎ、該当するFocusがなければNoneとする。Quick Startの自然完了は従来どおり選択待ちにする。
 
 ### 11.2 終了・再起動・Observation Gap
 
@@ -394,6 +398,8 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 
 これらの停止規則はBreakにも適用する。再起動・空白検出だけでは再開・自然完了しない。
 
+アプリ終了中には新Sessionを自動開始しない。自動開始済みのRunningを復元した場合も、そのSessionをObservationGap中断にして手動再開を待つ。
+
 ### 11.3 禁止する操作とエラー
 
 | 操作 | エラー条件 |
@@ -409,7 +415,7 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 | Session操作 | 対象が現在のSessionではない、または終了済み |
 | 作成・更新・読込 | 不正な時間、ID重複、オーバーフロー、参照・状態の不整合 |
 
-拒否された操作自体は状態・履歴を変更しない。ただし、操作前に独立して適用した時間経過による自然完了は保持する。対象がその時点で終了した場合、同じ入力を次のSessionへ流用しない。
+拒否された操作自体は状態・履歴を変更しない。ただし、操作前に独立して適用した時間経過による自然完了と次Sessionの自動開始は保持する。対象がその時点で終了した場合、同じ入力を次のSessionへ流用しない。
 
 ## 12. 保存の整合性
 
@@ -433,6 +439,7 @@ Pause、Distraction、中止、Reset、Skip、自然完了、正常終了、Obse
 一つの遷移から生成したsnapshot、終了済みSession、event群、ID採番情報に、保存層が保存世代を付けてまとめて保存する。通常tickの計時更新も純粋な遷移だが、保存タイミングはチェックポイント方針に従う。
 
 - 保存再試行では同じ変更内容とIDを使い、遷移を再実行して別のSession・eventを作らない。
+- Focus・Breakの自然完了では、終了済みSessionと自動開始した次Session、その採番情報を一つの候補として保存し、片方だけを確定しない。
 - Quick Start継続は、選択待ちのままか、継続先Focusと関連eventがそろった状態のどちらかで保存する。
 - 保存失敗を利用者に示し、保存済みとして終了しない。
 - snapshotと履歴の不整合をevent replayで黙って補正せず、読込エラーまたは明示的な復旧対象にする。
