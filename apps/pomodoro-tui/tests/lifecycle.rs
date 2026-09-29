@@ -6,7 +6,7 @@ use std::{collections::VecDeque, fs};
 
 use pomodoro_core::{
     Command, CurrentTask, DomainState, EventKind, InterruptionKind, Observation, ProgressState,
-    SessionId, SessionKind, TimerConfig, TimerState, Timestamp,
+    SessionId, SessionKind, SessionOutcome, TimerConfig, TimerState, Timestamp,
 };
 use pomodoro_platform::{
     LoadOutcome, SaveError, StorageLocation, StorageLockError, TimeError, WritableStorage,
@@ -35,20 +35,21 @@ fn observe(domain: &mut DomainState, previous: u64, at: u64) {
 
 fn running(kind: SessionKind) -> DomainState {
     let mut domain = ready();
-    if !kind.is_work() {
-        domain.apply(Command::SkipReady, Timestamp(0)).unwrap();
-        if kind == SessionKind::LongBreak {
-            // One focus per round makes the next break long without fabricating state.
-            domain = DomainState::new(TimerConfig::new(1, 5, 20, 1).unwrap()).unwrap();
-            domain
-                .apply(Command::Start(SessionKind::Focus), Timestamp(0))
-                .unwrap();
-            observe(&mut domain, 0, 1_000);
+    if kind == SessionKind::LongBreak {
+        // One focus per round starts the long break automatically.
+        domain = DomainState::new(TimerConfig::new(1, 5, 20, 1).unwrap()).unwrap();
+        domain
+            .apply(Command::Start(SessionKind::Focus), Timestamp(0))
+            .unwrap();
+        observe(&mut domain, 0, 1_000);
+    } else {
+        if !kind.is_work() {
+            domain.apply(Command::SkipReady, Timestamp(0)).unwrap();
         }
+        domain
+            .apply(Command::Start(kind), Timestamp(1_000))
+            .unwrap();
     }
-    domain
-        .apply(Command::Start(kind), Timestamp(1_000))
-        .unwrap();
     observe(&mut domain, 1_000, 1_100);
     domain
 }
@@ -238,6 +239,18 @@ fn ready_draft_round_progress_and_quick_start_decision_are_preserved() {
         round.snapshot().round_progress.completed_focuses_in_round,
         1
     );
+    let ProgressState::Active { session, .. } = &round.snapshot().state else {
+        panic!("expected automatic break")
+    };
+    round
+        .apply(
+            Command::End {
+                session_id: session.id,
+                outcome: SessionOutcome::Reset,
+            },
+            Timestamp(11_000),
+        )
+        .unwrap();
     let mut awaiting = running(SessionKind::QuickStart);
     for at in (2_100..=121_100).step_by(1_000) {
         observe(&mut awaiting, at - 1_000, at);
@@ -259,6 +272,47 @@ fn ready_draft_round_progress_and_quick_start_decision_are_preserved() {
         ));
         assert_eq!(restored_count(restored), expected_count);
     }
+}
+
+#[test]
+fn auto_started_break_round_trips_in_v1_and_restores_as_interrupted() {
+    let mut domain = DomainState::new(TimerConfig::new(1, 1, 1, 2).unwrap()).unwrap();
+    domain
+        .apply(
+            Command::SetCurrentTask(CurrentTask::parse("write chapter").unwrap()),
+            Timestamp(0),
+        )
+        .unwrap();
+    domain
+        .apply(Command::Start(SessionKind::Focus), Timestamp(0))
+        .unwrap();
+    observe(&mut domain, 0, 1_000);
+    let dir = support::tempdir();
+    let location = StorageLocation::at(dir.path().to_owned());
+    seed(&location, &domain);
+    assert_eq!(reload(&location).saved_state().unwrap().domain(), &domain);
+
+    let store = prepare(&location, 10_000).save().unwrap();
+    let restored = store.saved_state().unwrap().domain();
+    assert_eq!(restored.history().sessions.len(), 1);
+    assert_eq!(
+        restored.history().sessions[0]
+            .current_task
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "write chapter"
+    );
+    assert!(matches!(
+        restored.snapshot().state,
+        ProgressState::Active {
+            ref session,
+            timer: TimerState::Interrupted { ref interruption },
+        } if session.id == SessionId(2)
+            && session.kind == SessionKind::ShortBreak
+            && session.elapsed_ms == 0
+            && interruption.kind == InterruptionKind::ObservationGap
+    ));
 }
 
 #[test]

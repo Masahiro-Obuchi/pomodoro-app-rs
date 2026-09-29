@@ -127,6 +127,15 @@ fn completion_notifications_wait_for_successful_retry_and_are_not_repeated() {
     controller.clock.push(1_000);
     assert!(matches!(controller.tick(), Err(ControllerError::Save(_))));
     assert!(matches!(controller.retry(), Err(ControllerError::Save(_))));
+    let candidate = controller.pending_state().unwrap().clone();
+    assert_eq!(candidate.history().sessions.len(), 1);
+    assert!(matches!(
+        candidate.snapshot().state,
+        ProgressState::Active { ref session, timer: TimerState::Running { .. } }
+            if session.id == SessionId(2) && session.kind == SessionKind::LongBreak
+    ));
+    assert_eq!(controller.store.attempts[0].0, candidate);
+    assert_eq!(controller.store.attempts[1].0, candidate);
     assert!(
         !controller
             .store
@@ -149,8 +158,27 @@ fn completion_notifications_wait_for_successful_retry_and_are_not_repeated() {
         .unwrap();
     assert_eq!(log[notified - 1], Trace::Saved);
     drop(log);
-    assert_eq!(controller.store.generation, 2);
+    assert_eq!(controller.store.generation, 3);
     assert_eq!(controller.saved_state().history().sessions.len(), 1);
+    assert!(matches!(
+        controller.saved_state().snapshot().state,
+        ProgressState::Active {
+            ref session,
+            timer: TimerState::Interrupted { ref interruption },
+        } if session.id == SessionId(2)
+            && session.kind == SessionKind::LongBreak
+            && interruption.kind == InterruptionKind::ObservationGap
+    ));
+    assert_eq!(
+        controller
+            .store
+            .log
+            .borrow()
+            .iter()
+            .filter(|entry| matches!(entry, Trace::Notify(_)))
+            .count(),
+        1
+    );
     assert!(matches!(
         controller.retry(),
         Err(ControllerError::NoPendingSave)

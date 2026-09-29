@@ -128,10 +128,10 @@ fn assert_saved_completion(kind: SessionKind, saved: &DomainState) {
         SessionKind::Focus => {
             assert!(matches!(
                 saved.snapshot().state,
-                ProgressState::Ready {
-                    next_kind: SessionKind::ShortBreak,
-                    ..
-                }
+                ProgressState::Active {
+                    ref session,
+                    timer: pomodoro_core::TimerState::Running { .. },
+                } if session.kind == SessionKind::ShortBreak
             ));
             assert_eq!(saved.history().sessions.len(), 2);
             assert_eq!(saved.reflection().unwrap().work_ms, 27 * 60_000);

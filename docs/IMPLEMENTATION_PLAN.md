@@ -1,6 +1,6 @@
 # Implementation Plan
 
-更新日：2026-09-24
+更新日：2026-09-30
 
 この文書は拡張MVPの開発順序、Phaseの目的・依存関係・完了条件、Phase単位の進捗を管理する。初期Pomodoroの旧計画を置き換える。過去の内容はGit履歴で参照できる。
 
@@ -23,7 +23,7 @@
 
 ## 2. 現在の進捗
 
-通常実行のTUIはV1の保存・復元経路を使用する。拡張Domain Model、固定候補の保存と再試行、実行時の時刻観測、保存後の通知を接続し、起動時の明示的バックアップ復旧確認と、起動・終了時の保存失敗への操作経路を用意した。既存キー操作、Readyでの設定変更、復元した全状態の最小表示と操作が利用できる。一時的なlegacy APIは撤去し、全workspace、実ファイル・別プロセス、Rust 1.86での検証を通してPhase 2を完了した。以下は拡張MVPに対する進捗であり、既存機能の詳細台帳ではない。
+通常実行のTUIはV1の保存・復元経路を使用する。拡張Domain Model、固定候補の保存と再試行、実行時の時刻観測、保存後の通知を接続し、起動時の明示的バックアップ復旧確認と、起動・終了時の保存失敗への操作経路を用意した。既存キー操作、Readyでの設定変更、復元した全状態の最小表示と操作が利用できる。一時的なlegacy APIは撤去し、全workspace、実ファイル・別プロセス、Rust 1.86での検証を通してPhase 2を完了した。Phase 0～4は当時の仕様で完了済み。2026-09-30に追加したFocus・Break自然完了後の自動開始も[別計画](AUTO_START_PLAN.md)に従って実装・検証した。以下は拡張MVPに対する進捗であり、既存機能の詳細台帳ではない。
 
 | Phase | 到達目標 | 依存関係 | 現在の進捗 | 備考 |
 | --- | --- | --- | --- | --- |
@@ -31,7 +31,8 @@
 | 1 | 新しいドメインをコアで扱える | Phase 0 | 完了 | 純粋な遷移・計時・履歴・invariantを検証済み。Phase 1で設けた一時的なlegacy境界はPhase 2で撤去済み |
 | 2 | V1データを安全に保存・復元できる | Phase 1 | 完了 | 通常起動のV1切替とlegacy撤去を完了。全workspace、実ファイル・別プロセス、保存境界での子プロセス停止、Rust 1.86を検証。[詳細計画（過去資料）](archive/PHASE2_PLAN.md) |
 | 3 | TUIで着手・集中・復帰の一連の操作ができる | Phase 2 | 完了 | Current Task、Quick Start、Distraction／Return、中止、Break、保存失敗と復元をTUIで検証。全workspace、実ファイル・PTY、Rust 1.86を確認。[詳細計画（過去資料）](archive/PHASE3_PLAN.md) |
-| 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 完了 | 4指標のTUI表示とProduct Spec第10節の7例を、保存記録・再起動・画面で検証。全workspaceとRust 1.86のビルド・テストを確認。[詳細計画（過去資料）](archive/PHASE4_PLAN.md) |
+| 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 完了 | 4指標のTUI表示と当時のProduct Spec第10節の7例を、保存記録・再起動・画面で検証。全workspaceとRust 1.86のビルド・テストを確認。[詳細計画（過去資料）](archive/PHASE4_PLAN.md) |
+| 5 | Focus・Breakの自然完了後に次Sessionを自動開始する | Phase 4 | 完了 | コア遷移、保存・通知、TUI、V1実ファイル往復と疑似端末を検証。[詳細計画](AUTO_START_PLAN.md) |
 
 ## 3. Phase構成
 
@@ -91,6 +92,13 @@ Phase 2の既存操作・保存接続を基盤に、新しい作業開始・脱�
 
 完了したレビュー単位と検証方針は[Phase 4 Plan（過去資料）](archive/PHASE4_PLAN.md)を参照する。
 
+### Phase 5：Focus・Breakの自動開始
+
+- **目的**：起動中の自然完了で、次のBreakまたはFocusを利用者の操作なしに開始する。
+- **変更対象**：コアの自然完了遷移、コントローラーの保存・通知境界の確認、TUIの表示・通知文言、操作テスト、利用文書。
+- **依存関係**：Phase 4までの既存実装と、改定済みのProduct Spec・Domain Model・Persistence Schema。
+- **完了条件**：自然完了と次Sessionの一括保存、Task継承、保存失敗・終了・Observation Gapでの停止、旧V1保存データとの互換性を[詳細計画](AUTO_START_PLAN.md)の検証で確認できる。
+
 ## 4. 各Phaseに共通する完了の判断
 
 - 対象Phaseの完了条件を満たし、仕様文書と実装の間に未説明の差がない。
@@ -100,4 +108,4 @@ Phase 2の既存操作・保存接続を基盤に、新しい作業開始・脱�
 
 ## 5. MVP後の扱い
 
-Later Box、AI、GUI、統計表示の拡充はProduct Specに従ってMVP外とする。固定の後続PhaseやGUI技術を先に決めず、Phase 4後の利用結果を見て優先順位を更新する。
+Later Box、AI、GUI、統計表示の拡充はProduct Specに従ってMVP外とする。Focus・Breakの自動開始はPhase 5で扱い、その先の固定PhaseやGUI技術は先に決めない。

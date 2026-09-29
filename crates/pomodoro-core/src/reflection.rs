@@ -74,14 +74,10 @@ mod tests {
     #[test]
     fn completed_focuses_accumulate_while_breaks_and_skips_do_not() {
         let mut domain = DomainState::new(TimerConfig::new(1, 1, 1, 4).unwrap()).unwrap();
-        for (kind, started_at) in [
-            (SessionKind::Focus, 0),
-            (SessionKind::ShortBreak, 1_000),
-            (SessionKind::Focus, 2_000),
-        ] {
-            domain
-                .apply(Command::Start(kind), Timestamp(started_at))
-                .unwrap();
+        domain
+            .apply(Command::Start(SessionKind::Focus), Timestamp(0))
+            .unwrap();
+        for started_at in [0, 1_000, 2_000] {
             domain
                 .observe(Observation {
                     previous_at: Timestamp(started_at),
@@ -90,7 +86,18 @@ mod tests {
                 })
                 .unwrap();
         }
-        domain.apply(Command::SkipReady, Timestamp(3_000)).unwrap();
+        let ProgressState::Active { session, .. } = &domain.snapshot().state else {
+            panic!("expected active break");
+        };
+        domain
+            .apply(
+                Command::End {
+                    session_id: session.id,
+                    outcome: SessionOutcome::Skipped,
+                },
+                Timestamp(3_000),
+            )
+            .unwrap();
         domain
             .apply(Command::Start(SessionKind::Focus), Timestamp(3_000))
             .unwrap();
@@ -107,7 +114,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(domain.history().sessions.len(), 4);
+        assert_eq!(domain.history().sessions.len(), 5);
         assert_eq!(
             domain.history().reflection().unwrap(),
             ReflectionSummary {

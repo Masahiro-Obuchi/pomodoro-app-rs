@@ -323,13 +323,27 @@ fn completion_boundary_discards_input_and_notifies_after_save() {
         press(&mut h.app, key);
         assert!(matches!(
             h.app.state().snapshot().state,
-            ProgressState::Ready {
-                next_kind: SessionKind::ShortBreak,
-                ..
-            }
+            ProgressState::Active {
+                ref session,
+                timer: TimerState::Running { .. },
+            } if session.kind == SessionKind::ShortBreak
         ));
         assert_eq!(*h.log.borrow(), ["saved", "notify"]);
         assert_eq!(h.app.state().history().sessions.len(), 1);
+        assert!(h.app.message().contains("complete"));
+
+        h.log.borrow_mut().clear();
+        h.at.set(2_000);
+        press(&mut h.app, key);
+        assert!(matches!(
+            h.app.state().snapshot().state,
+            ProgressState::Active {
+                ref session,
+                timer: TimerState::Running { .. },
+            } if session.kind == SessionKind::Focus && session.id == SessionId(3)
+        ));
+        assert_eq!(*h.log.borrow(), ["saved", "notify"]);
+        assert_eq!(h.app.state().history().sessions.len(), 2);
         assert!(h.app.message().contains("complete"));
     }
 }
@@ -371,11 +385,11 @@ fn failed_completion_blocks_input_and_ticks_until_single_saved_notification() {
     assert!(!display.contains("q: Save & quit"));
     h.notification_failure.set(true);
     press(&mut h.app, 'r');
-    assert_eq!(*h.log.borrow(), ["failed", "saved", "notify"]);
+    assert_eq!(*h.log.borrow(), ["failed", "saved", "saved", "notify"]);
     assert!(h.app.pending_state().is_none());
     assert!(h.app.message().contains("Notification failed"));
     h.app.tick();
-    assert_eq!(*h.log.borrow(), ["failed", "saved", "notify"]);
+    assert_eq!(*h.log.borrow(), ["failed", "saved", "saved", "notify"]);
 }
 
 #[test]
@@ -728,6 +742,7 @@ fn settings_preserve_ready_kind_and_history_while_resetting_round_progress() {
             .completed_focuses_in_round,
         1
     );
+    press(&mut h.app, 'r'); // Reset the automatically started break to Ready.
     let history = h.app.state().history().clone();
     press(&mut h.app, 's');
     h.app.handle_key(KeyCode::Enter);

@@ -142,10 +142,10 @@ fn distraction_input_at_completion_does_not_target_the_next_session() {
     press(&mut h.app, 'd');
     assert!(matches!(
         h.app.state().snapshot().state,
-        ProgressState::Ready {
-            next_kind: SessionKind::ShortBreak,
-            ..
-        }
+        ProgressState::Active {
+            ref session,
+            timer: TimerState::Running { .. },
+        } if session.kind == SessionKind::ShortBreak
     ));
     assert_eq!(count_distractions(&h.app), 0);
     assert_eq!(*h.log.borrow(), ["saved", "notify"]);

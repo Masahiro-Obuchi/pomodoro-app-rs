@@ -74,9 +74,7 @@ fn notification_content(completed: SessionKind) -> NotificationContent {
     let (summary, body) = match completed {
         SessionKind::Focus => ("Focus complete", "Take a break."),
         SessionKind::QuickStart => ("Quick Start complete", "Finish or continue to Focus."),
-        SessionKind::ShortBreak | SessionKind::LongBreak => {
-            ("Break complete", "Ready for the next Focus.")
-        }
+        SessionKind::ShortBreak | SessionKind::LongBreak => ("Break complete", "Focus is next."),
     };
     NotificationContent { summary, body }
 }
@@ -141,16 +139,8 @@ mod tests {
                 "Quick Start complete",
                 "Finish or continue to Focus.",
             ),
-            (
-                SessionKind::ShortBreak,
-                "Break complete",
-                "Ready for the next Focus.",
-            ),
-            (
-                SessionKind::LongBreak,
-                "Break complete",
-                "Ready for the next Focus.",
-            ),
+            (SessionKind::ShortBreak, "Break complete", "Focus is next."),
+            (SessionKind::LongBreak, "Break complete", "Focus is next."),
         ] {
             assert_eq!(
                 notification_content(kind),

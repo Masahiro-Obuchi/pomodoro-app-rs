@@ -52,7 +52,7 @@ fn repeated_frames_and_live_ticks_reuse_history_but_completion_refreshes_it() {
     assert_eq!(completed.work_ms, 1_000);
     assert_eq!(completed.completed_focus_sessions, 1);
     assert_eq!(h.app.history_reflection.borrow().rebuilds, 2);
-    press(&mut h.app, ' '); // Break time does not add work.
+    // The automatically running Break does not add work.
     h.at.set(1_500);
     h.app.tick();
     assert_eq!(summary(&h.app), completed);

@@ -193,7 +193,18 @@ fn cancelling_long_break_resets_the_round_while_reset_keeps_it() {
             })
             .unwrap();
         if at == 0 {
-            domain.apply(Command::SkipReady, Timestamp(1_000)).unwrap();
+            let ProgressState::Active { session, .. } = &domain.snapshot().state else {
+                panic!("expected automatic short break")
+            };
+            domain
+                .apply(
+                    Command::End {
+                        session_id: session.id,
+                        outcome: SessionOutcome::Skipped,
+                    },
+                    Timestamp(1_000),
+                )
+                .unwrap();
         }
     }
     assert_eq!(
@@ -206,7 +217,6 @@ fn cancelling_long_break_resets_the_round_while_reset_keeps_it() {
         ('n', SessionKind::Focus, 0),
     ] {
         let mut h = harness(domain.clone(), 2_000);
-        press(&mut h.app, ' ');
         h.at.set(2_100);
         press(&mut h.app, key);
         let ProgressState::Ready { next_kind, .. } = h.app.state().snapshot().state else {
@@ -235,10 +245,10 @@ fn cancel_at_natural_completion_keeps_the_completed_result() {
     ended_with(&h.app, SessionOutcome::Completed);
     assert!(matches!(
         h.app.state().snapshot().state,
-        ProgressState::Ready {
-            next_kind: SessionKind::ShortBreak,
-            ..
-        }
+        ProgressState::Active {
+            ref session,
+            timer: TimerState::Running { .. },
+        } if session.kind == SessionKind::ShortBreak
     ));
     assert_eq!(*h.log.borrow(), ["saved", "notify"]);
     assert!(!h.app.message().contains("cancelled"));

@@ -51,6 +51,43 @@ fn history_view_tracks_live_work_and_distraction_without_dispatching_commands() 
 }
 
 #[test]
+fn automatic_sessions_continue_while_history_or_help_is_open() {
+    let mut h = harness(ready(), 0);
+    press(&mut h.app, ' ');
+    press(&mut h.app, 'h');
+    h.at.set(1_000);
+    h.app.tick();
+    assert!(h.app.history_open());
+    assert_eq!(h.app.reflection().unwrap().completed_focus_sessions, 1);
+    assert_eq!(h.app.state().history().sessions.len(), 1);
+    assert!(matches!(
+        h.app.state().snapshot().state,
+        ProgressState::Active { ref session, .. } if session.kind == SessionKind::ShortBreak
+    ));
+
+    h.at.set(2_000);
+    h.app.tick();
+    assert!(h.app.history_open());
+    assert_eq!(h.app.state().history().sessions.len(), 2);
+    assert!(matches!(
+        h.app.state().snapshot().state,
+        ProgressState::Active { ref session, .. } if session.kind == SessionKind::Focus
+    ));
+    assert_eq!(h.app.reflection().unwrap().work_ms, 1_000);
+
+    press(&mut h.app, 'h');
+    press(&mut h.app, '?');
+    h.at.set(3_000);
+    h.app.tick();
+    assert!(h.app.show_help());
+    assert!(matches!(
+        h.app.state().snapshot().state,
+        ProgressState::Active { ref session, .. } if session.kind == SessionKind::LongBreak
+    ));
+    assert_eq!(h.app.reflection().unwrap().completed_focus_sessions, 2);
+}
+
+#[test]
 fn task_and_settings_editors_take_priority_over_history() {
     let mut h = harness(ready(), 0);
     press(&mut h.app, 't');
