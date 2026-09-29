@@ -439,24 +439,40 @@ impl DomainState {
             ended_at: at,
             outcome,
         });
-        self.snapshot.state =
-            if session.kind == SessionKind::QuickStart && outcome == SessionOutcome::Completed {
-                ProgressState::AwaitingQuickStartDecision {
-                    quick_start_session_id: session.id,
-                    current_task: session.current_task.clone(),
-                }
-            } else {
-                let next = self.next_kind(session.kind, outcome)?;
-                ready(
-                    next,
-                    if outcome == SessionOutcome::Reset {
-                        session.current_task.clone()
-                    } else {
-                        None
-                    },
-                )
+        if session.kind == SessionKind::QuickStart && outcome == SessionOutcome::Completed {
+            self.snapshot.state = ProgressState::AwaitingQuickStartDecision {
+                quick_start_session_id: session.id,
+                current_task: session.current_task.clone(),
             };
+            self.history.sessions.push(session);
+            return Ok(());
+        }
+        let next = self.next_kind(session.kind, outcome)?;
+        let task = if outcome == SessionOutcome::Completed
+            && matches!(
+                session.kind,
+                SessionKind::ShortBreak | SessionKind::LongBreak
+            ) {
+            self.history
+                .sessions
+                .iter()
+                .rev()
+                .find(|entry| entry.kind == SessionKind::Focus)
+                .and_then(|entry| entry.current_task.clone())
+        } else {
+            None
+        };
+        let draft = if outcome == SessionOutcome::Reset {
+            session.current_task.clone()
+        } else {
+            None
+        };
         self.history.sessions.push(session);
+        if outcome == SessionOutcome::Completed {
+            self.start_session(next, task, None, at)?;
+        } else {
+            self.snapshot.state = ready(next, draft);
+        }
         Ok(())
     }
 

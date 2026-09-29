@@ -103,6 +103,18 @@ fn identical_settings_still_save_when_they_reset_round_progress() {
             monotonic_elapsed_ms: Some(1_000),
         })
         .unwrap();
+    let ProgressState::Active { session, .. } = &domain.snapshot().state else {
+        panic!("expected automatic break")
+    };
+    domain
+        .apply(
+            Command::End {
+                session_id: session.id,
+                outcome: SessionOutcome::Reset,
+            },
+            Timestamp(1_000),
+        )
+        .unwrap();
     assert_eq!(
         domain.snapshot().round_progress.completed_focuses_in_round,
         1
@@ -167,7 +179,7 @@ fn completion_saves_and_notifies_before_a_late_input_can_retarget_the_next_sessi
         .unwrap();
     let mut controller = controller(domain, 0);
     controller.clock.push(1_000);
-    // This would start the newly ready long break if applied after completion.
+    // Completion starts the long break; this old input must not target it.
     let commit = controller
         .execute(Command::Start(SessionKind::LongBreak))
         .unwrap();
@@ -175,18 +187,55 @@ fn completion_saves_and_notifies_before_a_late_input_can_retarget_the_next_sessi
     assert_eq!(commit.completed, Some(SessionKind::Focus));
     assert!(matches!(
         controller.state().snapshot().state,
-        ProgressState::Ready {
-            next_kind: SessionKind::LongBreak,
-            ..
-        }
+        ProgressState::Active {
+            ref session,
+            timer: TimerState::Running { .. },
+        } if session.kind == SessionKind::LongBreak
     ));
     assert_eq!(controller.state().history().sessions.len(), 1);
+    assert_eq!(controller.state().id_allocators().next_session_id, 3);
     assert_eq!(
         *controller.store.log.borrow(),
         vec![
             Trace::Save(Timestamp(1_000)),
             Trace::Saved,
             Trace::Notify(SessionKind::Focus)
+        ]
+    );
+}
+
+#[test]
+fn break_completion_starts_a_focus_in_the_same_saved_candidate() {
+    let mut domain = DomainState::new(TimerConfig::new(1, 1, 1, 2).unwrap()).unwrap();
+    domain
+        .apply(Command::Start(SessionKind::Focus), Timestamp(0))
+        .unwrap();
+    domain
+        .observe(Observation {
+            previous_at: Timestamp(0),
+            at: Timestamp(1_000),
+            monotonic_elapsed_ms: Some(1_000),
+        })
+        .unwrap();
+    let mut controller = controller(domain, 1_000);
+    controller.clock.push(2_000);
+    let commit = controller.tick().unwrap().unwrap();
+    assert_eq!(commit.completed, Some(SessionKind::ShortBreak));
+    assert!(matches!(
+        controller.saved_state().snapshot().state,
+        ProgressState::Active { ref session, timer: TimerState::Running { .. } }
+            if session.id == SessionId(3)
+                && session.kind == SessionKind::Focus
+                && session.elapsed_ms == 0
+    ));
+    assert_eq!(controller.saved_state().history().sessions.len(), 2);
+    assert_eq!(controller.store.attempts.len(), 1);
+    assert_eq!(
+        *controller.store.log.borrow(),
+        vec![
+            Trace::Save(Timestamp(2_000)),
+            Trace::Saved,
+            Trace::Notify(SessionKind::ShortBreak),
         ]
     );
 }

@@ -96,6 +96,15 @@ fn completion_during_shutdown_notifies_only_after_the_final_save() {
     let report = controller.retry().unwrap();
     assert_eq!(report.completed, Some(SessionKind::Focus));
     assert!(controller.is_closed());
+    assert!(matches!(
+        controller.saved_state().snapshot().state,
+        ProgressState::Active {
+            ref session,
+            timer: TimerState::Interrupted { ref interruption },
+        } if session.id == SessionId(2)
+            && session.kind == SessionKind::ShortBreak
+            && interruption.kind == InterruptionKind::AppExit
+    ));
     assert_eq!(
         *controller.store.log.borrow(),
         vec![

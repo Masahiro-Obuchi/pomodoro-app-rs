@@ -227,6 +227,51 @@ fn executable_opens_history_without_saving_and_returns_to_controls() {
 }
 
 #[test]
+fn executable_automatically_runs_break_then_focus_with_the_same_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = location(dir.path());
+    let LoadOutcome::New(mut store) = location.clone().lock().unwrap().load().unwrap() else {
+        panic!("expected new store");
+    };
+    let mut domain = DomainState::new(TimerConfig::new(3, 1, 1, 4).unwrap()).unwrap();
+    domain
+        .apply(
+            DomainCommand::SetCurrentTask(CurrentTask::parse("write chapter").unwrap()),
+            Timestamp(1_000),
+        )
+        .unwrap();
+    store.save(&domain, Timestamp(1_000)).unwrap();
+    drop(store);
+
+    let mut tui = Tui::spawn(dir.path());
+    tui.expect("Focus · Ready");
+    tui.send(b" ");
+    tui.expect("Session started and saved");
+    tui.expect("Short Break");
+    tui.expect("Task: write chapter");
+    tui.send(b"q");
+    assert!(tui.finish().success());
+
+    let store = loaded(&location);
+    let saved = store.saved_state().unwrap().domain();
+    assert_eq!(saved.history().sessions.len(), 2);
+    assert_eq!(saved.history().sessions[0].kind, SessionKind::Focus);
+    assert_eq!(saved.history().sessions[1].kind, SessionKind::ShortBreak);
+    assert_eq!(
+        saved.snapshot().round_progress.completed_focuses_in_round,
+        1
+    );
+    assert!(matches!(
+        saved.snapshot().state,
+        ProgressState::Active {
+            ref session,
+            timer: TimerState::Interrupted { .. },
+        } if session.kind == SessionKind::Focus
+            && session.current_task.as_ref().unwrap().as_str() == "write chapter"
+    ));
+}
+
+#[test]
 fn executable_first_launch_shows_four_zero_reflection_metrics() {
     let dir = tempfile::tempdir().unwrap();
     let mut tui = Tui::spawn_sized(dir.path(), 30, 12);

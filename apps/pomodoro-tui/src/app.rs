@@ -431,7 +431,7 @@ fn command_message(command: &Command) -> &'static str {
         Command::End {
             outcome: SessionOutcome::Completed,
             ..
-        } => "Session complete. Ready for the next session.",
+        } => "Session complete.",
         Command::ResetReady => "Already ready; nothing changed.",
         Command::SkipReady => "Skipped the planned session. Ready for the next session.",
         Command::DecideQuickStart { .. } => "Quick Start choice saved.",
@@ -451,9 +451,7 @@ const fn completion_message(kind: SessionKind) -> &'static str {
     match kind {
         SessionKind::Focus => "Focus complete. Take a break!",
         SessionKind::QuickStart => "Quick Start complete. Finish or continue to Focus.",
-        SessionKind::ShortBreak | SessionKind::LongBreak => {
-            "Break complete. Ready for the next Focus."
-        }
+        SessionKind::ShortBreak | SessionKind::LongBreak => "Break complete. Focus is next.",
     }
 }
 

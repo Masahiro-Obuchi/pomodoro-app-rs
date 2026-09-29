@@ -1,6 +1,6 @@
 # Persistence Schema
 
-更新日：2026-09-25
+更新日：2026-09-30
 
 本書は [Product Spec](PRODUCT_SPEC.md) と [Domain Model](DOMAIN_MODEL.md) を単一JSONの保存形式へ具体化する。今後の実装の設計基準であり、実装済みであることを意味しない。開発順序と進捗は [Implementation Plan](IMPLEMENTATION_PLAN.md) に置く。
 
@@ -119,6 +119,8 @@ stateはstatusをタグにする。
 | active | session、timer |
 | awaiting_quick_start_decision | quick_start_session_id、current_task |
 
+Focus・Breakの自然完了で次Sessionが自動開始された場合、完了したSessionはhistory.sessionsに、次のRunning Sessionはsnapshotのactiveに同じ保存世代で記録する。既存のstatusとフィールドで表現し、自動開始専用の保存フィールドは設けない。
+
 Sessionのフィールド名はDomain Modelに合わせ、id、kind、current_task、planned_duration_ms、started_at、elapsed_ms、continued_from_quick_start、endとする。endはnullまたはended_atとoutcomeを持つオブジェクト。
 
 SessionKindの値はfocus、quick_start、short_break、long_break。SessionOutcomeの値はcompleted、cancelled、reset、skipped。Current Taskは文字列またはnullとし、独立したIDを持たせない。
@@ -161,7 +163,7 @@ interruptionはid、kind、started_at、recorded_at、time_uncertainty、endを�
 
 Runningの復元では、空白の検出、中断開始、AppRestoredなどの対応eventとsnapshotを一括保存してから通常操作を許可する。中断中では中断を追加せず、AppRestoredを記録する。継続待ちのAppRestoredは完了済みQuick Startを対象にする。Readyには対象Sessionがないので、起動だけでSessionのeventを作らない。
 
-この停止規則はBreakにも適用する。復元や保存済み期限の超過だけでは計時・再開・自然完了しない。
+この停止規則はBreakにも、自動開始済みのFocus・Breakにも適用する。復元や保存済み期限の超過だけでは計時・再開・自然完了・次Sessionの自動開始をしない。
 
 ### 永続化しない情報
 
@@ -305,7 +307,7 @@ Windowsの置換APIがエラーを返した場合は、そのエラーだけで�
 
 確定不明は候補側の状態として保持し、再試行中の読込・祖先同期・競合検出の失敗でも失わない。エラーには確定状態と実際の失敗箇所をともに残す。本体が旧内容と一致することを確認して再書込へ進む場合、または必要な同期が完了して候補を確定する場合に状態を更新する。
 
-保存失敗中は候補をメモリに保ち、通常操作と計時反映を保留して未保存状態を表示する。保存回復後、Runningだった候補は観測を中断した境界からObservation Gapとして処理し、その遷移も保存してから操作を再開する。中断中・継続待ちでは元の状態を維持する。保存待ち専用のドメイン中断Kindは追加しない。
+保存失敗中は候補をメモリに保ち、通常操作と計時反映を保留して未保存状態を表示する。自然完了と次Sessionの自動開始を含む候補も、同じ内容・Session IDで再試行する。保存回復後、Runningだった候補は自動開始されたSessionを含め、観測を中断した境界からObservation Gapとして処理し、その遷移も保存してから操作を再開する。中断中・継続待ちでは元の状態を維持する。保存待ち専用のドメイン中断Kindは追加しない。
 
 終了時に保存できなければ、再試行または未保存での終了を明示的に選べるようにする。保存成功として正常終了しない。
 

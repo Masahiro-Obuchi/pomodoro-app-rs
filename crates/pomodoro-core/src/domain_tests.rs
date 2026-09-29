@@ -109,7 +109,8 @@ fn ordinary_ticks_only_update_the_snapshot_and_completion_is_recorded_once() {
     assert_eq!(active(&state).0.elapsed_ms, 9_000);
     assert!(state.history().events.is_empty());
     observe(&mut state, 9_000, 10_000);
-    assert_eq!(ready_kind(&state), SessionKind::ShortBreak);
+    assert_eq!(active(&state).0.kind, SessionKind::ShortBreak);
+    assert_eq!(active(&state).0.elapsed_ms, 0);
     assert_eq!(state.history().sessions.len(), 1);
     assert_eq!(state.history().events.len(), 1);
     assert_eq!(
@@ -118,6 +119,7 @@ fn ordinary_ticks_only_update_the_snapshot_and_completion_is_recorded_once() {
     );
     observe(&mut state, 10_000, 11_000);
     assert_eq!(state.history().sessions.len(), 1);
+    assert_eq!(active(&state).0.elapsed_ms, 1_000);
     assert_eq!(
         state.reflection().unwrap(),
         ReflectionSummary {
@@ -127,6 +129,51 @@ fn ordinary_ticks_only_update_the_snapshot_and_completion_is_recorded_once() {
             returns: 0
         }
     );
+}
+
+#[test]
+fn natural_completions_cycle_through_breaks_and_inherit_the_focus_task() {
+    let mut state = state();
+    let task = CurrentTask::parse("write chapter").unwrap();
+    apply(&mut state, Command::SetCurrentTask(task.clone()), 0);
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+
+    advance(&mut state, 0, 10_000);
+    assert_eq!(active(&state).0.kind, SessionKind::ShortBreak);
+    assert_eq!(active(&state).0.current_task, None);
+    assert_eq!(active(&state).0.started_at, Timestamp(10_000));
+    advance(&mut state, 10_000, 5_000);
+    assert_eq!(active(&state).0.kind, SessionKind::Focus);
+    assert_eq!(active(&state).0.current_task, task);
+    assert_eq!(active(&state).0.elapsed_ms, 0);
+
+    advance(&mut state, 15_000, 10_000);
+    assert_eq!(active(&state).0.kind, SessionKind::LongBreak);
+    assert_eq!(
+        state.snapshot().round_progress.completed_focuses_in_round,
+        2
+    );
+    advance(&mut state, 25_000, 20_000);
+    assert_eq!(active(&state).0.kind, SessionKind::Focus);
+    assert_eq!(active(&state).0.current_task, task);
+    assert_eq!(
+        state.snapshot().round_progress.completed_focuses_in_round,
+        0
+    );
+    assert_eq!(state.reflection().unwrap().work_ms, 20_000);
+    assert_eq!(state.history().sessions.len(), 4);
+    assert_eq!(state.id_allocators().next_session_id, 6);
+    assert_eq!(restored(&state), state);
+}
+
+#[test]
+fn break_without_prior_focus_starts_an_untasked_focus() {
+    let mut state = state();
+    apply(&mut state, Command::SkipReady, 0);
+    apply(&mut state, Command::Start(SessionKind::ShortBreak), 0);
+    advance(&mut state, 0, 5_000);
+    assert_eq!(active(&state).0.kind, SessionKind::Focus);
+    assert_eq!(active(&state).0.current_task, None);
 }
 
 #[test]
@@ -146,7 +193,8 @@ fn completion_before_an_input_cannot_retarget_that_input() {
         10_000,
     );
     assert_eq!(state, completed);
-    apply(&mut state, Command::Start(SessionKind::ShortBreak), 10_000);
+    assert_eq!(active(&state).0.kind, SessionKind::ShortBreak);
+    assert_ne!(active(&state).0.id, old_id);
     rejected(&mut state, Command::Pause(old_id), 10_000);
     assert_eq!(active(&state).0.kind, SessionKind::ShortBreak);
 }
@@ -746,9 +794,26 @@ fn ready_for(kind: SessionKind) -> DomainState {
                 apply(&mut state, Command::Start(SessionKind::Focus), at);
                 advance(&mut state, at, 10_000);
                 if index == 0 {
-                    apply(&mut state, Command::SkipReady, at + 10_000);
+                    let id = active(&state).0.id;
+                    apply(
+                        &mut state,
+                        Command::End {
+                            session_id: id,
+                            outcome: SessionOutcome::Skipped,
+                        },
+                        at + 10_000,
+                    );
                 }
             }
+            let id = active(&state).0.id;
+            apply(
+                &mut state,
+                Command::End {
+                    session_id: id,
+                    outcome: SessionOutcome::Reset,
+                },
+                20_000,
+            );
         }
         SessionKind::Focus | SessionKind::QuickStart => {}
     }
@@ -867,6 +932,27 @@ fn continuous_overshoot_credits_only_the_planned_time() {
     observe(&mut state, 0, 5_000);
     assert_eq!(state.history().sessions[0].elapsed_ms, 1_000);
     assert_eq!(state.reflection().unwrap().work_ms, 1_000);
+    assert_eq!(active(&state).0.kind, SessionKind::ShortBreak);
+    assert_eq!(active(&state).0.started_at, Timestamp(5_000));
+    assert_eq!(active(&state).0.elapsed_ms, 0);
+}
+
+#[test]
+fn auto_start_id_overflow_rolls_back_the_completion_and_interval() {
+    let mut state = state();
+    apply(&mut state, Command::Start(SessionKind::Focus), 0);
+    advance(&mut state, 0, 9_000);
+    state.ids.next_session_id = u64::MAX;
+    let before = state.clone();
+    assert_eq!(
+        state.observe(Observation {
+            previous_at: Timestamp(9_000),
+            at: Timestamp(10_000),
+            monotonic_elapsed_ms: Some(1_000),
+        }),
+        Err(DomainError::Overflow)
+    );
+    assert_eq!(state, before);
 }
 
 #[test]
@@ -996,14 +1082,19 @@ fn long_break_resets_round_on_completion_cancel_or_skip_but_not_reset() {
                 0
             }
         );
-        assert_eq!(
-            ready_kind(&state),
-            if outcome == SessionOutcome::Reset {
-                SessionKind::LongBreak
-            } else {
-                SessionKind::Focus
-            }
-        );
+        if outcome == SessionOutcome::Completed {
+            assert_eq!(active(&state).0.kind, SessionKind::Focus);
+            assert_eq!(active(&state).0.elapsed_ms, 0);
+        } else {
+            assert_eq!(
+                ready_kind(&state),
+                if outcome == SessionOutcome::Reset {
+                    SessionKind::LongBreak
+                } else {
+                    SessionKind::Focus
+                }
+            );
+        }
         assert_eq!(state.reflection().unwrap().work_ms, 20_000);
     }
     let mut state = ready_for(SessionKind::LongBreak);
@@ -1012,7 +1103,7 @@ fn long_break_resets_round_on_completion_cancel_or_skip_but_not_reset() {
         state.snapshot().round_progress.completed_focuses_in_round,
         0
     );
-    assert_eq!(state.history().sessions.len(), 2);
+    assert_eq!(state.history().sessions.len(), 4);
 }
 
 #[test]
@@ -1087,6 +1178,15 @@ fn from_parts_preserves_historical_durations_after_settings_change() {
         let duration_ms = state.snapshot().settings.duration_millis(kind);
         apply(&mut state, Command::Start(kind), 30_000);
         advance(&mut state, 30_000, duration_ms);
+        let next_id = active(&state).0.id;
+        apply(
+            &mut state,
+            Command::End {
+                session_id: next_id,
+                outcome: SessionOutcome::Reset,
+            },
+            30_000 + duration_ms,
+        );
         let history = state.history().clone();
 
         let settings = TimerConfig::new(11, 6, 21, 2).unwrap();
@@ -1370,9 +1470,7 @@ fn ended_sessions_keep_valid_gap_and_lifecycle_events_from_their_interruptions()
         apply(&mut state, command, 12_000);
         assert_eq!(restored(&state), state);
         advance(&mut state, 12_000, 9_000);
-        assert_eq!(ready_kind(&state), SessionKind::ShortBreak);
-        assert_eq!(restored(&state), state);
-        apply(&mut state, Command::Start(SessionKind::ShortBreak), 21_000);
+        assert_eq!(active(&state).0.kind, SessionKind::ShortBreak);
         assert_eq!(restored(&state), state);
     }
 }

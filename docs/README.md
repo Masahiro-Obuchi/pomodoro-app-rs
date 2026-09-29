@@ -26,5 +26,6 @@
 | [Phase 2 Plan](archive/PHASE2_PLAN.md) | 完了したPhase 2の実行計画 |
 | [Phase 3 Plan](archive/PHASE3_PLAN.md) | 完了したPhase 3の実行計画 |
 | [Phase 4 Plan](archive/PHASE4_PLAN.md) | 完了したPhase 4の実行計画 |
+| [Focus・Break自動開始 実装計画](archive/AUTO_START_PLAN.md) | 完了したPhase 5の実行計画 |
 
 過去資料の記述は作成当時の計画であり、現在の仕様や実装状況を示すものではない。
