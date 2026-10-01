@@ -106,14 +106,15 @@ fn normal_screen_separates_time_caption_progress_task_totals_and_controls() {
         .iter()
         .rposition(|row| row.contains(['█', '▀', '▄']))
         .unwrap();
-    let caption = find("remaining / 25:00");
+    let caption = find("REMAINING / 25:00");
     let progress = find("▂");
     let task = find("CURRENT TASK");
     let totals = find("Work total");
     let keys = find("Space: Pause");
     assert!(caption > clock_bottom + 1, "{rows:#?}");
     assert!(progress > caption + 1, "{rows:#?}");
-    for heading in [task, totals, keys] {
+    assert!(task > progress + 1, "{rows:#?}");
+    for heading in [totals, keys] {
         assert!(rows[heading - 1].contains("─"), "{rows:#?}");
         assert!(
             rows[heading - 2].trim_matches(['│', ' ']).is_empty(),
@@ -121,6 +122,8 @@ fn normal_screen_separates_time_caption_progress_task_totals_and_controls() {
         );
     }
     assert!(!rows.iter().any(|row| row.contains("History / Total")));
+    let status = find("Status: Session started and saved");
+    assert!(status > find("q: Save & quit") + 1, "{rows:#?}");
     assert_metric(&render(&h.app, 80, 24), "Work total", "0:00:00");
     assert!(
         rows.iter()

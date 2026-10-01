@@ -47,7 +47,7 @@ pub(super) struct NormalControls {
 }
 
 impl NormalControls {
-    pub(super) fn for_snapshot(snapshot: &PomodoroState) -> Self {
+    pub(super) fn for_snapshot(snapshot: &PomodoroState, help_visible: bool) -> Self {
         let session = match &snapshot.state {
             ProgressState::Ready { next_kind, .. } => {
                 let mut bindings = vec![
@@ -101,7 +101,11 @@ impl NormalControls {
             // Keep the existing explanation for s outside Ready, but do not
             // advertise settings as an available operation there.
             Binding::new('s', settings_hint, NormalAction::RequestSettings),
-            Binding::new('?', Some(("?", "Help")), NormalAction::ToggleHelp),
+            Binding::new(
+                '?',
+                Some(("?", if help_visible { "Hide help" } else { "Help" })),
+                NormalAction::ToggleHelp,
+            ),
             Binding::new('q', Some(("q", "Save & quit")), NormalAction::Shutdown),
         ];
         Self { session, common }

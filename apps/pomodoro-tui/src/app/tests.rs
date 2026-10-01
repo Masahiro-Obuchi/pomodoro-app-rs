@@ -14,6 +14,7 @@ use super::*;
 
 mod cancel;
 mod distraction;
+mod help;
 mod history;
 mod neon;
 mod quick_start;

@@ -191,7 +191,9 @@ fn executable_opens_history_without_saving_and_returns_to_controls() {
     tui.send(b"q");
     assert!(tui.child.try_wait().unwrap().is_none());
     tui.send(b"\x1b");
-    tui.expect("Space: Start");
+    // During a differential redraw, old key hints can remain below History.
+    // Wait for the main state as well before sending the next input after Esc.
+    tui.expect_all(&["Focus · Ready", "Space: Start"]);
     tui.send(b"q");
     assert!(tui.finish().success());
     let store = loaded(&location);

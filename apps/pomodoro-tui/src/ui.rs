@@ -111,7 +111,6 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
 struct MainView<'a> {
     status: String,
     time: String,
-    total: String,
     task: &'a str,
     round: String,
     percent: u16,
@@ -132,7 +131,6 @@ impl<'a> MainView<'a> {
         Self {
             status,
             time: format_time(remaining),
-            total: format_time(total),
             task: if kind.is_work() {
                 task.map_or("Not set", CurrentTask::as_str)
             } else {
@@ -160,7 +158,7 @@ fn draw_main<S: SaveStore, C: Clock, N: CompletionNotifier>(
     let header = header_lines(&view, area.width, color);
     let mut footer = Footer::new(app, false, color);
     let big_rows = count_rows(header.clone(), area.width)
-        .saturating_add(CLOCK_HEIGHT + 8)
+        .saturating_add(CLOCK_HEIGHT + 7)
         .saturating_add(footer.rows(area.width));
     let large = area.width >= clock_width(&view.time) && big_rows <= area.height;
     if !large {
@@ -241,9 +239,9 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
 ) -> u16 {
     let stats = summary_lines(app, rest.width);
     let stats_rows = count_rows(stats.clone(), rest.width);
-    // Reserve the caption gaps, two section rules and every footer row first.
+    // Reserve the caption gaps, footer rule and every footer row first.
     // Extra rows separate sections; saved totals take priority during recovery.
-    let available = rest.height.saturating_sub(CLOCK_HEIGHT + 8 + footer_rows);
+    let available = rest.height.saturating_sub(CLOCK_HEIGHT + 7 + footer_rows);
     let show_stats = stats_rows.saturating_add(1) <= available;
     let spare = available.saturating_sub(if show_stats { stats_rows + 1 } else { 0 });
     if spare > 3 {
@@ -258,7 +256,7 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
     );
     take(rest, 1);
     frame.render_widget(
-        Paragraph::new(format!("{} remaining / {}", view.time, view.total))
+        Paragraph::new(format!("REMAINING / {}", view.time))
             .alignment(Alignment::Center)
             .style(Style::new().fg(ui_theme::MUTED)),
         take(rest, 1),
@@ -266,10 +264,6 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
     take(rest, 1);
     draw_progress(frame, take(rest, 1), view.percent, color);
     if spare > 0 {
-        take(rest, 1);
-    }
-    draw_rule(frame, take(rest, 1));
-    if spare > 4 {
         take(rest, 1);
     }
     let task = vec![
@@ -282,7 +276,7 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
     }
     if show_stats {
         draw_rule(frame, take(rest, 1));
-        if spare > 5 {
+        if spare > 4 {
             take(rest, 1);
         }
         frame.render_widget(
@@ -293,7 +287,7 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
     if spare > 2 {
         take(rest, 1);
     }
-    u16::from(spare > 6)
+    u16::from(spare > 5)
 }
 
 fn draw_rule(frame: &mut Frame<'_>, area: Rect) {
@@ -316,8 +310,9 @@ fn draw_progress(frame: &mut Frame<'_>, area: Rect, percent: u16, color: Color) 
 }
 
 fn draw_compact_body(frame: &mut Frame<'_>, view: &MainView<'_>, rest: &mut Rect, color: Color) {
-    let clock = if view.time.len() + view.total.len() + 3 <= usize::from(rest.width) {
-        format!("{} / {}", view.time, view.total)
+    let caption = format!("REMAINING / {}", view.time);
+    let clock = if caption.len() <= usize::from(rest.width) {
+        caption
     } else {
         view.time.clone()
     };

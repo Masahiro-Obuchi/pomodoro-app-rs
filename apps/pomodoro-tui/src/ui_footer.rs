@@ -9,7 +9,7 @@ use crate::{
     app::{App, ControlHint, InputContext},
     controller::{Clock, CompletionNotifier, SaveStore},
     ui::{session_label, timer_view},
-    ui_text, ui_theme,
+    ui_help, ui_text, ui_theme,
 };
 
 pub(super) struct Footer {
@@ -57,10 +57,15 @@ impl Footer {
             _ => Vec::new(),
         };
         let critical_lines = lines.len();
-        add_explanation(app, compact, &mut lines);
+        let mut explanation = Vec::new();
+        add_explanation(app, compact, color, &mut explanation);
         if !app.message().is_empty() {
-            lines.push(Line::styled(
-                app.message().to_owned(),
+            explanation.push(Line::styled(
+                if !compact && app.input_context() == InputContext::Normal {
+                    format!("Status: {}", app.message())
+                } else {
+                    app.message().to_owned()
+                },
                 Style::new().fg(
                     if matches!(
                         app.input_context(),
@@ -73,6 +78,10 @@ impl Footer {
                 ),
             ));
         }
+        if !compact && app.input_context() == InputContext::Normal && !explanation.is_empty() {
+            lines.push(Line::default());
+        }
+        lines.extend(explanation);
         Self {
             lines,
             critical_lines,
@@ -124,6 +133,7 @@ fn normal_controls(hints: &[ControlHint], color: Color) -> Line<'static> {
 fn add_explanation<S: SaveStore, C: Clock, N: CompletionNotifier>(
     app: &App<S, C, N>,
     compact: bool,
+    color: Color,
     lines: &mut Vec<Line<'static>>,
 ) {
     if app.input_context() == InputContext::SaveBlocked && !compact {
@@ -135,6 +145,10 @@ fn add_explanation<S: SaveStore, C: Clock, N: CompletionNotifier>(
     if app.input_context() != InputContext::Normal {
         return;
     }
+    if app.show_help() {
+        lines.extend(ui_help::lines(app.state().snapshot(), compact, color));
+        return;
+    }
     if matches!(
         app.state().snapshot().state,
         ProgressState::AwaitingQuickStartDecision { .. }
@@ -144,25 +158,6 @@ fn add_explanation<S: SaveStore, C: Clock, N: CompletionNotifier>(
                 "Choice time excluded."
             } else {
                 "Choice time is not counted. Continue starts a full Focus."
-            },
-            Style::new().fg(ui_theme::MUTED),
-        ));
-    }
-    if app.show_help() {
-        lines.push(Line::styled(
-            match app.state().snapshot().state {
-                ProgressState::Ready { .. } => {
-                    "Settings are available while ready. Paused time is not counted."
-                }
-                ProgressState::Active { .. } => {
-                    "Reset keeps task and type; Skip advances; Cancel goes to Focus."
-                }
-                ProgressState::AwaitingQuickStartDecision { .. } if compact => {
-                    "Settings unavailable during f/c choice."
-                }
-                ProgressState::AwaitingQuickStartDecision { .. } => {
-                    "f: Finish; c: Continue to Focus. Settings unavailable."
-                }
             },
             Style::new().fg(ui_theme::MUTED),
         ));
