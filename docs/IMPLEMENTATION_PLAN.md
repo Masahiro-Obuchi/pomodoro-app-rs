@@ -33,7 +33,7 @@
 | 3 | TUIで着手・集中・復帰の一連の操作ができる | Phase 2 | 完了 | Current Task、Quick Start、Distraction／Return、中止、Break、保存失敗と復元をTUIで検証。全workspace、実ファイル・PTY、Rust 1.86を確認。[詳細計画（過去資料）](archive/PHASE3_PLAN.md) |
 | 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 完了 | 4指標のTUI表示と当時のProduct Spec第10節の7例を、保存記録・再起動・画面で検証。全workspaceとRust 1.86のビルド・テストを確認。[詳細計画（過去資料）](archive/PHASE4_PLAN.md) |
 | 5 | Focus・Breakの自然完了後に次Sessionを自動開始する | Phase 4 | 完了 | コア遷移、保存・通知、TUI、V1実ファイル往復と疑似端末を検証。[詳細計画](archive/AUTO_START_PLAN.md) |
-| 6 | Neon Focusの見た目を既存TUIへ実装する | Phase 5 | 未着手 | 共通テーマ、大時計、縮小表示、各画面の統一と実端末確認。[詳細計画](TUI_DESIGN_PLAN.md) |
+| 6 | Neon Focusの見た目を既存TUIへ実装する | Phase 5 | 完了 | 共通テーマ、大時計、縮小表示、各画面の統一を実装。描画・疑似端末とLinuxのVTE端末で表示を確認。[詳細計画・実画面](TUI_DESIGN_PLAN.md) |
 
 ## 3. Phase構成
 

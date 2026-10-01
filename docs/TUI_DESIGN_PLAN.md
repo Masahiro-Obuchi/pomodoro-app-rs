@@ -173,3 +173,32 @@ cargo +1.86.0 test --workspace --locked
 - 起動、履歴、設定、Task編集、保存回復、終了まで外観が揃い、描画による状態変更がない。
 - 既存の操作・保存・復元テストと追加する描画テストが成功し、実際の端末で表示を確認する。
 - README、PRの実画面と検証結果、Phaseの進捗が実装内容と一致する。
+
+## 7. 実装結果（2026-10-02）
+
+共通テーマ、大時計、操作ヒント、メイン画面と補助画面への適用、利用案内を実装した。テーマは`ui_theme.rs`、時計は`ui_timer.rs`、キーと説明の表示は`ui_footer.rs`・`ui_text.rs`へまとめた。操作ヒントは既存Bindingのキー・説明を用い、描画による時計観測・遷移・保存・通知がないことを検証した。
+
+80×24・100×30で通常文字を併記した大時計と4指標を表示する。狭い画面では時計を通常文字へ切り替え、必要なキーを優先する。指標は幅に応じて4列・2列・1列とし、入りきらない場合はHistoryから確認できる。設定画面は全項目が入らない場合に選択中の項目へ縮小し、Task編集では未保存表示と書記素を保った末尾表示を使う。
+
+### 実画面
+
+以下は実行ファイルをLinuxのVTE端末エンジン（GTK 3、80×24、Monospace 13）で起動して撮影した画面。縮小表示は24×17。仮想ディスプレイ上で実際の端末描画を確認し、集中・休憩・中断の色、日本語Task、編集画面、履歴、保存回復と終了確認を照合した。撮影用プロセスでは`NO_COLOR`を解除した。通常の起動は`NO_COLOR`を尊重する。
+
+![実装したNeon Focusの集中画面](assets/neon-focus-implemented.png)
+
+| 画面 | 撮影画像 |
+| --- | --- |
+| 休憩 | [シアンの時計](assets/neon-focus-break.png) |
+| 縮小表示・Pause | [24×17の通常文字時計と操作キー](assets/neon-focus-compact.png) |
+| Task編集 | [日本語Taskと未保存表示](assets/neon-focus-task-edit.png) |
+| 設定 | [選択行と操作キー](assets/neon-focus-settings.png) |
+| 保存回復 | [確認済み状態・未確定候補・再試行キー](assets/neon-focus-save-recovery.png) |
+
+端末のセル比率やフォントによって大時計の形は参照画像と異なる。Windows/macOSの実端末による受入は引き続き[対応OSの受入記録](WINDOWS_MACOS_W5_ACCEPTANCE.md)を参照する。
+
+### 検証結果
+
+- `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`、`cargo +1.86.0 test --workspace --locked`が成功。
+- TUI単体テスト96件を含むworkspaceテストで、状態・キー・集計値・色、最大24時間・最大ラウンド設定、長いUnicode Task、繰り返し描画の副作用がないことを確認。
+- 疑似端末の判定を現在の画面内容へ揃え、実行ファイルのRGB出力、100×30→24×17→80×24のリサイズ、Distraction／Return、保存回復・再起動を確認。短い設定でのFocus→Break→FocusとTask継承も既存の実行経路テストが成功。
+- 保存回復は24×14でキーが表示され、24×6／9／12では拡大案内が出ることを確認。起動時の復旧同意に必要な警告・保存時刻・表示サイズの条件も既存テストが成功。

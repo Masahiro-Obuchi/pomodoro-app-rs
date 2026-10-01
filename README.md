@@ -9,6 +9,7 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 ## Current features
 
+- Neon Focus theme with a large clock, state colors, and highlighted operation keys
 - 25-minute focus sessions, 5-minute short breaks, and 15-minute long breaks
 - Long break after every four completed focus sessions
 - Automatic short/long break after a completed focus session, then automatic focus after the break while the app is running
@@ -46,6 +47,7 @@ The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate expan
 
 - Linux with a local filesystem for saved state
 - A terminal supported by Crossterm
+- An RGB color terminal and a monospace font with Unicode block characters for the intended appearance (80 columns × 24 rows recommended)
 - `notify-send` for Linux desktop notifications (optional)
 
 ## Linux prerelease
@@ -68,6 +70,10 @@ POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
 
 ### Controls
 
+![Neon Focus running in an 80×24 VTE terminal](docs/assets/neon-focus-implemented.png)
+
+Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick Start choices use amber, and save recovery uses red. State names and operation keys remain visible alongside the colors. The screen respects `NO_COLOR`; unset it when you want the theme colors. Color reproduction, block shapes, and Japanese or emoji glyphs depend on your terminal and font.
+
 | Key | Action |
 | --- | --- |
 | `Space` | Start, pause, resume, or return from a distraction |
@@ -86,7 +92,7 @@ At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked
 
 The History view shows recorded work time from Focus and Quick Start, naturally completed Focus sessions, reported distractions, and explicit Returns across all records, including the current session. Pause, distraction, break, and Quick Start choice time do not add work time. Work time uses `H:MM:SS`; subsecond time is truncated only for display. While a session runs, the shown time may include progress since the latest saved checkpoint. Opening History does not pause the timer or save state. If a save fails while it is open, the recovery controls take priority. During a pending save, the main screen shows the latest confirmed saved state and keeps the unconfirmed candidate separate.
 
-On short or narrow terminals, the timer hides the progress gauge and cumulative summary when their space is needed for operation and save recovery controls. Press `h` to view the totals when the summary is hidden. If the recovery keys or History view cannot fit, the screen asks you to enlarge the terminal. Enlarge the terminal to see the gauge and summary again.
+On short or narrow terminals, the large clock switches to ordinary text, and the progress gauge and cumulative summary are hidden when their space is needed for operation and save recovery controls. Long task names are shortened for display; the stored task remains complete. Press `h` to view the totals when the summary is hidden. Narrow settings show the selected field when the complete form cannot fit; use the arrow keys to reach the other fields. If the required controls or History view cannot fit, the screen asks you to enlarge the terminal. Enlarge the terminal to restore the large clock, gauge, and summary.
 
 In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 
