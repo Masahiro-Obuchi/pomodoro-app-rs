@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph, Wrap},
+    widgets::{Block, Borders, Padding, Paragraph, Wrap},
 };
 
 use crate::{
@@ -91,7 +91,9 @@ pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
         ui_theme::accent(app.state().snapshot())
     };
     let area = centered(frame.area(), 82, 30);
-    let block = ui_theme::panel(" >_ POMODORO ").title_style(Style::new().fg(color));
+    let block = ui_theme::panel(" >_ POMODORO ")
+        .title_style(Style::new().fg(color))
+        .padding(Padding::horizontal(u16::from(area.width >= 60)));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.is_empty() {
@@ -155,9 +157,10 @@ fn draw_main<S: SaveStore, C: Clock, N: CompletionNotifier>(
 ) {
     let view = MainView::new(app);
     let status_rows = count_rows(vec![Line::from(view.status.as_str())], area.width);
+    let header = header_lines(&view, area.width, color);
     let mut footer = Footer::new(app, false, color);
-    let big_rows = status_rows
-        .saturating_add(CLOCK_HEIGHT + 6)
+    let big_rows = count_rows(header.clone(), area.width)
+        .saturating_add(CLOCK_HEIGHT + 8)
         .saturating_add(footer.rows(area.width));
     let large = area.width >= clock_width(&view.time) && big_rows <= area.height;
     if !large {
@@ -181,27 +184,51 @@ fn draw_main<S: SaveStore, C: Clock, N: CompletionNotifier>(
         return;
     }
     let mut rest = area;
+    let header = if large {
+        header
+    } else {
+        vec![Line::styled(view.status.as_str(), Style::new().fg(color))]
+    };
+    let header_rows = count_rows(header.clone(), area.width);
     frame.render_widget(
-        Paragraph::new(view.status.as_str())
-            .style(Style::new().fg(color))
-            .wrap(Wrap { trim: false }),
-        take(&mut rest, status_rows),
+        Paragraph::new(header).wrap(Wrap { trim: false }),
+        take(&mut rest, header_rows),
     );
-    if large {
-        draw_large_body(frame, app, &view, &mut rest, color, footer.rows(area.width));
+    let footer_padding = if large {
+        draw_large_body(frame, app, &view, &mut rest, color, footer.rows(area.width))
     } else {
         draw_compact_body(frame, &view, &mut rest, color);
-    }
+        0
+    };
     frame.render_widget(
         Paragraph::new(footer.lines)
             .wrap(Wrap { trim: false })
             .block(
                 Block::default()
                     .borders(Borders::TOP)
-                    .border_style(Style::new().fg(ui_theme::RULE)),
+                    .border_style(Style::new().fg(ui_theme::RULE))
+                    .padding(Padding::new(0, 0, footer_padding, 0)),
             ),
         rest,
     );
+}
+
+fn header_lines<'a>(view: &'a MainView<'_>, width: u16, color: Color) -> Vec<Line<'a>> {
+    let status = Span::styled(view.status.as_str(), Style::new().fg(color));
+    let round = Span::styled(view.round.as_str(), Style::new().fg(ui_theme::MUTED));
+    let used = status.width() + round.width();
+    if used + 2 <= usize::from(width) {
+        vec![Line::from(vec![
+            status,
+            Span::raw(" ".repeat(usize::from(width) - used)),
+            round,
+        ])]
+    } else {
+        vec![
+            Line::from(status),
+            Line::from(round).alignment(Alignment::Right),
+        ]
+    }
 }
 
 fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
@@ -211,19 +238,15 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
     rest: &mut Rect,
     color: Color,
     footer_rows: u16,
-) {
+) -> u16 {
     let stats = summary_lines(app, rest.width);
     let stats_rows = count_rows(stats.clone(), rest.width);
-    let available = rest.height.saturating_sub(CLOCK_HEIGHT + 6 + footer_rows);
-    let show_stats = stats_rows <= available;
-    let spare = available.saturating_sub(if show_stats { stats_rows } else { 0 });
-    frame.render_widget(
-        Paragraph::new(view.round.as_str())
-            .alignment(Alignment::Right)
-            .style(Style::new().fg(ui_theme::MUTED)),
-        take(rest, 1),
-    );
-    if spare > 0 {
+    // Reserve the caption gaps, two section rules and every footer row first.
+    // Extra rows separate sections; saved totals take priority during recovery.
+    let available = rest.height.saturating_sub(CLOCK_HEIGHT + 8 + footer_rows);
+    let show_stats = stats_rows.saturating_add(1) <= available;
+    let spare = available.saturating_sub(if show_stats { stats_rows + 1 } else { 0 });
+    if spare > 3 {
         take(rest, 1);
     }
     frame.render_widget(
@@ -233,20 +256,20 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
         },
         take(rest, CLOCK_HEIGHT),
     );
+    take(rest, 1);
     frame.render_widget(
         Paragraph::new(format!("{} remaining / {}", view.time, view.total))
             .alignment(Alignment::Center)
             .style(Style::new().fg(ui_theme::MUTED)),
         take(rest, 1),
     );
-    frame.render_widget(
-        Gauge::default()
-            .gauge_style(Style::new().fg(color).bg(ui_theme::TRACK))
-            .label("")
-            .percent(view.percent),
-        take(rest, 1),
-    );
-    if spare > 1 {
+    take(rest, 1);
+    draw_progress(frame, take(rest, 1), view.percent, color);
+    if spare > 0 {
+        take(rest, 1);
+    }
+    draw_rule(frame, take(rest, 1));
+    if spare > 4 {
         take(rest, 1);
     }
     let task = vec![
@@ -254,8 +277,12 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
         Line::from(ui_text::shorten(view.task, usize::from(rest.width))),
     ];
     frame.render_widget(Paragraph::new(task), take(rest, 2));
+    if spare > 1 {
+        take(rest, 1);
+    }
     if show_stats {
-        if spare > 2 {
+        draw_rule(frame, take(rest, 1));
+        if spare > 5 {
             take(rest, 1);
         }
         frame.render_widget(
@@ -263,6 +290,29 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
             take(rest, stats_rows),
         );
     }
+    if spare > 2 {
+        take(rest, 1);
+    }
+    u16::from(spare > 6)
+}
+
+fn draw_rule(frame: &mut Frame<'_>, area: Rect) {
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::new().fg(ui_theme::RULE)),
+        area,
+    );
+}
+
+fn draw_progress(frame: &mut Frame<'_>, area: Rect, percent: u16, color: Color) {
+    let width = usize::from(area.width);
+    let filled = width * usize::from(percent.min(100)) / 100;
+    let line = Line::from(vec![
+        Span::styled("▂".repeat(filled), Style::new().fg(color)),
+        Span::styled("▂".repeat(width - filled), Style::new().fg(ui_theme::TRACK)),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 fn draw_compact_body(frame: &mut Frame<'_>, view: &MainView<'_>, rest: &mut Rect, color: Color) {
@@ -327,10 +377,7 @@ fn summary_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
         1
     };
     let cell_width = usize::from(width) / columns;
-    let mut lines = vec![Line::styled(
-        "─ History / Total ─",
-        Style::new().fg(ui_theme::MUTED),
-    )];
+    let mut lines = Vec::new();
     for group in metrics.chunks(columns) {
         let mut labels = Vec::new();
         let mut values = Vec::new();

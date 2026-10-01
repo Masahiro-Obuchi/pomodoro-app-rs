@@ -90,6 +90,45 @@ fn resizing_restores_the_clock_without_leaving_old_glyphs() {
 }
 
 #[test]
+fn normal_screen_separates_time_caption_progress_task_totals_and_controls() {
+    let mut h = harness(DomainState::new(TimerConfig::default()).unwrap(), 0);
+    press(&mut h.app, ' ');
+    let rendered = buffer(&h.app, 80, 24);
+    let rows = (0..24)
+        .map(|y| {
+            (0..80)
+                .map(|x| rendered[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+    let find = |text: &str| rows.iter().position(|row| row.contains(text)).unwrap();
+    let clock_bottom = rows
+        .iter()
+        .rposition(|row| row.contains(['█', '▀', '▄']))
+        .unwrap();
+    let caption = find("remaining / 25:00");
+    let progress = find("▂");
+    let task = find("CURRENT TASK");
+    let totals = find("Work total");
+    let keys = find("Space: Pause");
+    assert!(caption > clock_bottom + 1, "{rows:#?}");
+    assert!(progress > caption + 1, "{rows:#?}");
+    for heading in [task, totals, keys] {
+        assert!(rows[heading - 1].contains("─"), "{rows:#?}");
+        assert!(
+            rows[heading - 2].trim_matches(['│', ' ']).is_empty(),
+            "{rows:#?}"
+        );
+    }
+    assert!(!rows.iter().any(|row| row.contains("History / Total")));
+    assert_metric(&render(&h.app, 80, 24), "Work total", "0:00:00");
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("Session started and saved"))
+    );
+}
+
+#[test]
 fn maximum_duration_and_unicode_task_fit_without_losing_digits_or_graphemes() {
     let mut domain =
         DomainState::new(TimerConfig::new(86_400, 86_400, 86_400, u32::MAX).unwrap()).unwrap();

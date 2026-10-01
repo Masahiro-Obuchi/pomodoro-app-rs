@@ -2,7 +2,7 @@
 
 use pomodoro_core::{PomodoroState, ProgressState, SessionKind, TimerState};
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     widgets::{Block, Borders},
 };
 
@@ -21,10 +21,7 @@ pub(crate) const fn base() -> Style {
 }
 
 pub(crate) const fn key(color: Color) -> Style {
-    Style::new()
-        .fg(BACKGROUND)
-        .bg(color)
-        .add_modifier(Modifier::BOLD)
+    Style::new().fg(BACKGROUND).bg(color)
 }
 
 pub(crate) fn panel(title: &str) -> Block<'_> {

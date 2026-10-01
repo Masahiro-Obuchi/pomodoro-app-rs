@@ -1,8 +1,8 @@
-//! A seven-row clock over a preformatted duration; it never samples time.
+//! A seven-pixel clock packed into four terminal rows; it never samples time.
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, widgets::Widget};
 
-pub(crate) const CLOCK_HEIGHT: u16 = 7;
+pub(crate) const CLOCK_HEIGHT: u16 = 4;
 
 pub(crate) fn format_time(milliseconds: u64) -> String {
     let seconds = milliseconds.div_ceil(1_000);
@@ -33,12 +33,17 @@ impl Widget for BigClock<'_> {
             let mut line = String::new();
             for ch in self.text.chars() {
                 let (bits, columns) = glyph(ch);
+                let upper = bits[usize::from(row) * 2];
+                let lower = bits.get(usize::from(row) * 2 + 1).copied().unwrap_or(0);
                 for column in (0..columns).rev() {
-                    line.push(if bits[usize::from(row)] & (1 << column) == 0 {
-                        ' '
-                    } else {
-                        '█'
-                    });
+                    line.push(
+                        match (upper & (1 << column) != 0, lower & (1 << column) != 0) {
+                            (true, true) => '█',
+                            (true, false) => '▀',
+                            (false, true) => '▄',
+                            (false, false) => ' ',
+                        },
+                    );
                 }
                 line.push(' ');
             }
@@ -92,7 +97,7 @@ mod tests {
 
     #[test]
     fn clock_is_centered_and_never_draws_a_partial_number() {
-        for (width, height, visible) in [(39, 7, true), (38, 7, false), (39, 6, false)] {
+        for (width, height, visible) in [(39, 4, true), (38, 4, false), (39, 3, false)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             terminal
                 .draw(|frame| {
