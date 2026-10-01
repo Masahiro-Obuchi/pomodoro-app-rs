@@ -72,7 +72,7 @@ POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
 
 ![Neon Focus running in an 80×24 VTE terminal](docs/assets/neon-focus-implemented.png)
 
-Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick Start choices use amber, and save recovery uses red. State names and operation keys remain visible alongside the colors. The screen respects `NO_COLOR`; unset it when you want the theme colors. Color reproduction, block shapes, and Japanese or emoji glyphs depend on your terminal and font.
+Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick Start choices use amber, and save recovery uses red. State names and operation keys remain visible alongside the colors. The screen respects `NO_COLOR`; unset it when you want the theme colors. The clock uses half block characters to leave room between the time, caption, progress bar, task, totals, and controls. Plain horizontal rules separate the sections. Ordinary text uses the terminal's font size; the app cannot set a different point size for each section. Color reproduction, block shapes, and Japanese or emoji glyphs depend on your terminal and font.
 
 | Key | Action |
 | --- | --- |
