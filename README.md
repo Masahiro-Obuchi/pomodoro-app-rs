@@ -85,8 +85,12 @@ Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick 
 | `x` | Cancel an active session and return to Focus start |
 | `s` | Open settings while Ready (waiting to start) |
 | `h` | Open the History view during normal operation; `h` or `Esc` returns |
-| `?` | Toggle help |
+| `?` | Show or hide help for the current state |
 | `q` | Save and quit |
+
+`REMAINING / 24:59` shows the remaining time, matching the large clock. Press `?` for a labeled help section: the initial screen explains how to start, set a task, and try Quick Start; running and interrupted sessions explain their available operations. Help also shows the full session duration, such as `Session duration: 25:00`. Press `?` again (`Hide help`) to close it. Opening help does not pause the timer. A blank line separates the keys from help and status messages when space permits.
+
+![Getting started help in an 80×24 VTE terminal](docs/assets/neon-focus-help.png)
 
 At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. During a running Focus or Quick Start, `d` records a distraction and stops work time. `Space` records Return and resumes the remaining work time, including after an exit and restart. While any session is running or interrupted, `x` ends that attempt and returns to Focus start. Credited work time remains in history; cancelling a distraction does not record a Return. A naturally completed Focus starts the next break automatically; a naturally completed break starts the next Focus and carries over the previous Focus's Current Task. The first Focus and sessions scheduled after a skip, cancel, or reset still need a manual start. App closure, observation gaps, and save failures stop timing and require manual resumption.
 
