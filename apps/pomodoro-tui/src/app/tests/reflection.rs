@@ -145,22 +145,29 @@ fn reflection_shows_distractions_and_returns_including_the_active_session() {
     );
     let display = render(&h.app, 80, 24);
     for label in [
-        "Total:",
-        "Focus completed 0",
-        "Work 0:00:00",
-        "Distractions 2",
-        "Returns 1",
+        "Work total",
+        "Focus completed",
+        "Distractions",
+        "Returns",
         "Round",
         "Return",
     ] {
         assert!(display.contains(label), "missing {label}: {display}");
+    }
+    for (label, value) in [
+        ("Work total", "0:00:00"),
+        ("Focus completed", "0"),
+        ("Distractions", "2"),
+        ("Returns", "1"),
+    ] {
+        assert_metric(&display, label, value);
     }
     h.failures.set(1);
     h.at.set(1_600);
     press(&mut h.app, ' ');
     assert_eq!(summary(&h.app).returns, 1);
     let pending = render(&h.app, 80, 24);
-    assert!(pending.contains("Returns 1"));
+    assert_metric(&pending, "Returns", "1");
     assert!(pending.contains("r: Retry save"));
     assert!(pending.contains("Q: Confirm unsaved exit"));
     assert_eq!(h.app.history_reflection.borrow().rebuilds, 1);
@@ -176,5 +183,5 @@ fn reflection_shows_distractions_and_returns_including_the_active_session() {
         }
     );
     assert_eq!(h.app.history_reflection.borrow().rebuilds, 2);
-    assert!(render(&h.app, 80, 24).contains("Returns 2"));
+    assert_metric(&render(&h.app, 80, 24), "Returns", "2");
 }

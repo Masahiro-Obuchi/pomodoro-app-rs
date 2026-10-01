@@ -2,13 +2,17 @@
 
 use ratatui::{
     Frame,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    style::Style,
+    text::Line,
+    widgets::{Paragraph, Wrap},
 };
 
 use crate::{
     app::App,
     controller::{Clock, CompletionNotifier, SaveStore},
+    ui_footer::controls,
     ui_settings::centered,
+    ui_theme,
 };
 
 pub(crate) fn draw_history<S: SaveStore, C: Clock, N: CompletionNotifier>(
@@ -39,10 +43,17 @@ pub(crate) fn draw_history<S: SaveStore, C: Clock, N: CompletionNotifier>(
         );
         return;
     }
+    let mut lines = content
+        .lines()
+        .map(|line| Line::from(line.to_owned()))
+        .collect::<Vec<_>>();
+    lines.pop();
+    lines.push(controls(&[("h/Esc", "Back")], ui_theme::FOCUS));
     frame.render_widget(
-        Paragraph::new(content)
+        Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).title(" History ")),
+            .style(Style::new().fg(ui_theme::TEXT))
+            .block(ui_theme::panel(" History ")),
         area,
     );
 }

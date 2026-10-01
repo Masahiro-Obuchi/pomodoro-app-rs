@@ -40,7 +40,7 @@ struct Tui {
     terminal_modes: File,
     initial_local_modes: LocalModes,
     output: Receiver<Vec<u8>>,
-    received: Vec<u8>,
+    screen: vt100::Parser,
 }
 
 impl Tui {
@@ -91,7 +91,7 @@ impl Tui {
             terminal_modes,
             initial_local_modes,
             output,
-            received: Vec::new(),
+            screen: vt100::Parser::new(height, width, 0),
         }
     }
 
@@ -103,20 +103,30 @@ impl Tui {
         let deadline = Instant::now() + TIMEOUT;
         let expected: Vec<String> = texts
             .iter()
-            .map(|text| text.chars().filter(|ch| !ch.is_whitespace()).collect())
+            .map(|text| {
+                text.chars()
+                    .filter(|ch| {
+                        !ch.is_whitespace() && !matches!(ch, '│' | '─' | '┌' | '┐' | '└' | '┘')
+                    })
+                    .collect()
+            })
             .collect();
         loop {
-            // Ratatui may position spaces with cursor commands rather than
-            // emitting them. Compare the visible words without whitespace.
-            let emitted = without_csi(&self.received);
-            let compact: String = emitted.chars().filter(|ch| !ch.is_whitespace()).collect();
+            // Inspect the current terminal screen: a differential redraw can
+            // retain characters without sending their bytes a second time.
+            let emitted = self.screen.screen().contents();
+            let compact: String = emitted
+                .chars()
+                .filter(|ch| {
+                    !ch.is_whitespace() && !matches!(ch, '│' | '─' | '┌' | '┐' | '└' | '┘')
+                })
+                .collect();
             if expected.iter().all(|text| compact.contains(text)) {
-                self.received.clear();
                 return;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.output.recv_timeout(remaining) {
-                Ok(bytes) => self.received.extend(bytes),
+                Ok(bytes) => self.screen.process(&bytes),
                 Err(error) => panic!("waiting for {texts:?}: {error}; output: {emitted}"),
             }
         }
@@ -142,25 +152,6 @@ impl Tui {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
-}
-
-fn without_csi(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let mut chars = text.chars().peekable();
-    let mut result = String::new();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
-            chars.next();
-            for ch in chars.by_ref() {
-                if ('@'..='~').contains(&ch) {
-                    break;
-                }
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-    result
 }
 
 impl Drop for Tui {
@@ -248,7 +239,7 @@ fn executable_automatically_runs_break_then_focus_with_the_same_task() {
     tui.send(b" ");
     tui.expect("Session started and saved");
     tui.expect("Short Break");
-    tui.expect("Task: write chapter");
+    tui.expect_all(&["Focus · Running", "CURRENT TASK", "write chapter"]);
     tui.send(b"q");
     assert!(tui.finish().success());
 
@@ -361,7 +352,12 @@ fn bracketed_multiline_paste_stays_in_task_editor_and_plain_key_stream_can_confi
     drop(store);
 
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("Task: a");
+    tui.expect_all(&["CURRENT TASK", "a", "Space: Start"]);
+    let screen = tui.screen.screen().contents();
+    let mut lines = screen.lines();
+    lines.find(|line| line.contains("CURRENT TASK")).unwrap();
+    let task = lines.next().unwrap().trim().trim_matches('│').trim();
+    assert_eq!(task, "a", "restored task must appear in full: {screen}");
     tui.send(b"t");
     tui.expect("Current Task · unsaved edit");
     // A terminal without bracketed paste sends ordinary keys. Its first Enter

@@ -5,9 +5,9 @@ use pomodoro_core::{
 };
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Rect},
     style::{Color, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph, Wrap},
 };
 
@@ -15,253 +15,339 @@ use crate::{
     app::{App, InputContext},
     controller::{Clock, CompletionNotifier, SaveStore},
     startup_gate::StartupGate,
+    ui_footer::{Footer, controls, count_rows},
     ui_history::{draw_history, format_work_time},
     ui_settings::{centered, draw_settings},
     ui_task::draw_task,
+    ui_text, ui_theme,
+    ui_timer::{BigClock, CLOCK_HEIGHT, clock_width, format_time},
 };
 
 /// Returns whether the recovery timestamp, loss warning and consent keys fit.
 /// A terminal too small to show these facts must not allow recovery consent.
 pub fn draw_startup(frame: &mut Frame<'_>, gate: &StartupGate) -> bool {
-    let recovery_prompt_visible = !matches!(gate, StartupGate::Recovery(_))
+    frame.render_widget(Block::default().style(ui_theme::base()), frame.area());
+    let visible = !matches!(gate, StartupGate::Recovery(_))
         || (frame.area().width >= 50 && frame.area().height >= 9);
-    if !recovery_prompt_visible {
-        frame.render_widget(
-            Paragraph::new("Enlarge the terminal\nEsc: Exit")
-                .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Startup & recovery "),
-                ),
-            centered(frame.area(), 82, 9),
-        );
-        return false;
-    }
-    let lines = gate.prompt_lines().join("\n");
+    let area = centered(frame.area(), 82, if visible { 14 } else { 9 });
+    let color = if matches!(
+        gate,
+        StartupGate::SaveFailed { .. } | StartupGate::ConfirmUnsaved { .. }
+    ) {
+        ui_theme::ERROR
+    } else {
+        ui_theme::WAITING
+    };
+    let lines = if visible {
+        let mut lines = gate
+            .prompt_lines()
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>();
+        match gate {
+            StartupGate::Recovery(_) => {
+                lines[3] = controls(&[("y", "Recover"), ("n/q/Esc", "Exit unchanged")], color);
+            }
+            StartupGate::SaveFailed { .. } => {
+                lines[1] = controls(&[("r", "Retry save"), ("Q", "Confirm unsaved exit")], color);
+            }
+            StartupGate::ConfirmUnsaved { .. } => {
+                lines[1] = controls(&[("y", "Exit unsaved"), ("n / Esc", "Back")], color);
+            }
+            _ => {}
+        }
+        lines
+    } else {
+        vec![
+            Line::from("Enlarge the terminal"),
+            controls(&[("Esc", "Exit")], color),
+        ]
+    };
     frame.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Startup & recovery "),
-        ),
-        centered(frame.area(), 82, 14),
+        Paragraph::new(lines)
+            .style(Style::new().fg(color))
+            .wrap(Wrap { trim: false })
+            .block(ui_theme::panel(" Startup & recovery ").title_style(Style::new().fg(color))),
+        area,
     );
-    recovery_prompt_visible
+    visible
 }
 
 pub fn draw<S: SaveStore, C: Clock, N: CompletionNotifier>(
     frame: &mut Frame<'_>,
     app: &App<S, C, N>,
 ) {
+    frame.render_widget(Block::default().style(ui_theme::base()), frame.area());
     if app.input_context() == InputContext::History {
         draw_history(frame, app);
         return;
     }
-    let area = centered(frame.area(), 82, 25);
-    let compact_sections = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(0),
-        Constraint::Length(0),
-        Constraint::Min(0),
-    ])
-    .split(area);
-    if draw_recovery_size_warning(frame, app, area, compact_sections[4]) {
+    let color = if matches!(
+        app.input_context(),
+        InputContext::SaveBlocked | InputContext::ConfirmUnsavedExit
+    ) {
+        ui_theme::ERROR
+    } else {
+        ui_theme::accent(app.state().snapshot())
+    };
+    let area = centered(frame.area(), 82, 30);
+    let block = ui_theme::panel(" >_ POMODORO ").title_style(Style::new().fg(color));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.is_empty() {
         return;
     }
-    let full_sections = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(4),
-        Constraint::Min(6),
-    ])
-    .split(area);
-    let full_footer_rows = full_sections[4].height.saturating_sub(2);
-    let full_footer_width = full_sections[4].width.saturating_sub(2);
-    let needed_footer_rows = Paragraph::new(footer_lines(app, false))
-        .wrap(Wrap { trim: false })
-        .line_count(full_footer_width);
-    let compact = area.height < 20
-        || full_footer_width == 0
-        || needed_footer_rows > usize::from(full_footer_rows);
-    let sections = if compact {
-        compact_sections
-    } else {
-        full_sections
-    };
-    let snapshot = app.state().snapshot();
-    let (kind, status, remaining_ms, total_ms, task) = timer_view(snapshot);
-    let title = if app.pending_state().is_some() {
-        format!(
-            "Save pending | Last saved: {} · {status}",
-            session_label(kind)
-        )
-    } else {
-        format!("{} · {status}", session_label(kind))
-    };
-    frame.render_widget(panel(title, " Pomodoro "), sections[0]);
-    let seconds = remaining_ms.div_ceil(1_000);
-    frame.render_widget(
-        panel(
-            format!(
-                "{:02}:{:02}   Task: {}",
-                seconds / 60,
-                seconds % 60,
-                task.map_or("Not set", CurrentTask::as_str)
-            ),
-            " Timer ",
-        ),
-        sections[1],
-    );
-    if !compact {
-        let percent = total_ms.saturating_sub(remaining_ms).saturating_mul(100) / total_ms;
-        frame.render_widget(
-            Gauge::default()
-                .block(Block::default().borders(Borders::ALL))
-                .gauge_style(Style::default().fg(Color::LightCyan))
-                .percent(u16::try_from(percent).unwrap_or(100)),
-            sections[2],
-        );
-        let history = match app.reflection() {
-            Ok(summary) => format!(
-                "Total: Focus completed {} / Work {}\nDistractions {} / Returns {}   Round {}/{}",
-                summary.completed_focus_sessions,
-                format_work_time(summary.work_ms),
-                summary.distractions,
-                summary.returns,
-                snapshot.round_progress.completed_focuses_in_round,
-                snapshot.settings.focuses_before_long_break(),
-            ),
-            Err(error) => format!("Could not summarize history: {error}"),
-        };
-        frame.render_widget(panel(history, " History "), sections[3]);
-    }
-    let footer = footer_lines(app, compact);
-    frame.render_widget(
-        Paragraph::new(footer)
-            .wrap(Wrap { trim: false })
-            .block(Block::default().borders(Borders::ALL).title(" Controls ")),
-        sections[4],
-    );
+    draw_main(frame, app, inner, color);
     if let Some(settings) = app.settings() {
-        draw_settings(frame, settings);
+        draw_settings(frame, settings, app.message());
     }
     if let Some(task) = app.task_edit() {
         draw_task(frame, task, app.message());
     }
 }
 
-fn draw_recovery_size_warning<S: SaveStore, C: Clock, N: CompletionNotifier>(
+struct MainView<'a> {
+    status: String,
+    time: String,
+    total: String,
+    task: &'a str,
+    round: String,
+    percent: u16,
+}
+
+impl<'a> MainView<'a> {
+    fn new<S: SaveStore, C: Clock, N: CompletionNotifier>(app: &'a App<S, C, N>) -> Self {
+        let snapshot = app.state().snapshot();
+        let (kind, status, remaining, total, task) = timer_view(snapshot);
+        let status = if app.pending_state().is_some() || app.shutdown_failed() {
+            format!(
+                "Save pending | Last saved: {} · {status}",
+                session_label(kind)
+            )
+        } else {
+            format!("{} · {status}", session_label(kind))
+        };
+        Self {
+            status,
+            time: format_time(remaining),
+            total: format_time(total),
+            task: if kind.is_work() {
+                task.map_or("Not set", CurrentTask::as_str)
+            } else {
+                "—"
+            },
+            round: format!(
+                "Round {}/{}",
+                snapshot.round_progress.completed_focuses_in_round,
+                snapshot.settings.focuses_before_long_break()
+            ),
+            percent: u16::try_from(total.saturating_sub(remaining).saturating_mul(100) / total)
+                .unwrap_or(100),
+        }
+    }
+}
+
+fn draw_main<S: SaveStore, C: Clock, N: CompletionNotifier>(
     frame: &mut Frame<'_>,
     app: &App<S, C, N>,
     area: Rect,
-    footer_area: Rect,
-) -> bool {
-    let recovery_hint_count = match app.input_context() {
-        InputContext::SaveBlocked => usize::from(app.pending_state().is_some()) + 1,
-        InputContext::ConfirmUnsavedExit => 2,
-        _ => return false,
-    };
-    let footer_width = footer_area.width.saturating_sub(2);
-    let available_rows = footer_area.height.saturating_sub(2);
-    let required_rows = Paragraph::new(
-        footer_lines(app, true)
-            .into_iter()
-            .take(recovery_hint_count)
-            .collect::<Vec<_>>(),
-    )
-    .wrap(Wrap { trim: false })
-    .line_count(footer_width);
-    if footer_width > 0 && required_rows <= usize::from(available_rows) {
-        return false;
+    color: Color,
+) {
+    let view = MainView::new(app);
+    let status_rows = count_rows(vec![Line::from(view.status.as_str())], area.width);
+    let mut footer = Footer::new(app, false, color);
+    let big_rows = status_rows
+        .saturating_add(CLOCK_HEIGHT + 6)
+        .saturating_add(footer.rows(area.width));
+    let large = area.width >= clock_width(&view.time) && big_rows <= area.height;
+    if !large {
+        footer = Footer::new(app, true, color);
     }
-    let prompt = if app.input_context() == InputContext::ConfirmUnsavedExit {
-        "Enlarge terminal to confirm unsaved exit."
+    let minimal_rows = status_rows
+        .saturating_add(3)
+        .saturating_add(footer.critical_rows(area.width));
+    if !large && (minimal_rows > area.height || usize::from(area.width) < view.time.len()) {
+        let prompt = match app.input_context() {
+            InputContext::ConfirmUnsavedExit => "Enlarge terminal to confirm unsaved exit.",
+            InputContext::SaveBlocked => "Enlarge terminal to show save recovery controls.",
+            _ => "Enlarge terminal to show timer and controls.",
+        };
+        frame.render_widget(
+            Paragraph::new(prompt)
+                .style(Style::new().fg(ui_theme::WAITING))
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+        return;
+    }
+    let mut rest = area;
+    frame.render_widget(
+        Paragraph::new(view.status.as_str())
+            .style(Style::new().fg(color))
+            .wrap(Wrap { trim: false }),
+        take(&mut rest, status_rows),
+    );
+    if large {
+        draw_large_body(frame, app, &view, &mut rest, color, footer.rows(area.width));
     } else {
-        "Enlarge terminal to show save recovery controls."
-    };
-    frame.render_widget(Paragraph::new(prompt).wrap(Wrap { trim: false }), area);
-    true
+        draw_compact_body(frame, &view, &mut rest, color);
+    }
+    frame.render_widget(
+        Paragraph::new(footer.lines)
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::new().fg(ui_theme::RULE)),
+            ),
+        rest,
+    );
 }
 
-fn footer_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
+fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
+    frame: &mut Frame<'_>,
     app: &App<S, C, N>,
-    compact: bool,
-) -> Vec<Line<'_>> {
-    let mut footer = vec![];
-    match app.input_context() {
-        InputContext::Closed
-        | InputContext::Settings
-        | InputContext::Task
-        | InputContext::History => {}
-        InputContext::ConfirmUnsavedExit => {
-            footer.push(Line::from(
-                "Some changes are not saved. Exit without saving?",
+    view: &MainView<'_>,
+    rest: &mut Rect,
+    color: Color,
+    footer_rows: u16,
+) {
+    let stats = summary_lines(app, rest.width);
+    let stats_rows = count_rows(stats.clone(), rest.width);
+    let available = rest.height.saturating_sub(CLOCK_HEIGHT + 6 + footer_rows);
+    let show_stats = stats_rows <= available;
+    let spare = available.saturating_sub(if show_stats { stats_rows } else { 0 });
+    frame.render_widget(
+        Paragraph::new(view.round.as_str())
+            .alignment(Alignment::Right)
+            .style(Style::new().fg(ui_theme::MUTED)),
+        take(rest, 1),
+    );
+    if spare > 0 {
+        take(rest, 1);
+    }
+    frame.render_widget(
+        BigClock {
+            text: &view.time,
+            style: Style::new().fg(color).bg(ui_theme::BACKGROUND),
+        },
+        take(rest, CLOCK_HEIGHT),
+    );
+    frame.render_widget(
+        Paragraph::new(format!("{} remaining / {}", view.time, view.total))
+            .alignment(Alignment::Center)
+            .style(Style::new().fg(ui_theme::MUTED)),
+        take(rest, 1),
+    );
+    frame.render_widget(
+        Gauge::default()
+            .gauge_style(Style::new().fg(color).bg(ui_theme::TRACK))
+            .label("")
+            .percent(view.percent),
+        take(rest, 1),
+    );
+    if spare > 1 {
+        take(rest, 1);
+    }
+    let task = vec![
+        Line::styled("CURRENT TASK", Style::new().fg(ui_theme::MUTED)),
+        Line::from(ui_text::shorten(view.task, usize::from(rest.width))),
+    ];
+    frame.render_widget(Paragraph::new(task), take(rest, 2));
+    if show_stats {
+        if spare > 2 {
+            take(rest, 1);
+        }
+        frame.render_widget(
+            Paragraph::new(stats).wrap(Wrap { trim: false }),
+            take(rest, stats_rows),
+        );
+    }
+}
+
+fn draw_compact_body(frame: &mut Frame<'_>, view: &MainView<'_>, rest: &mut Rect, color: Color) {
+    let clock = if view.time.len() + view.total.len() + 3 <= usize::from(rest.width) {
+        format!("{} / {}", view.time, view.total)
+    } else {
+        view.time.clone()
+    };
+    frame.render_widget(
+        Paragraph::new(clock).style(Style::new().fg(color)),
+        take(rest, 1),
+    );
+    frame.render_widget(
+        Paragraph::new(format!(
+            "Task: {}",
+            ui_text::shorten(view.task, usize::from(rest.width.saturating_sub(6)))
+        )),
+        take(rest, 1),
+    );
+}
+
+fn take(area: &mut Rect, height: u16) -> Rect {
+    let height = height.min(area.height);
+    let result = Rect::new(area.x, area.y, area.width, height);
+    area.y += height;
+    area.height -= height;
+    result
+}
+
+fn summary_lines<S: SaveStore, C: Clock, N: CompletionNotifier>(
+    app: &App<S, C, N>,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let summary = match app.reflection() {
+        Ok(summary) => summary,
+        Err(error) => {
+            return vec![Line::styled(
+                format!("Could not summarize history: {error}"),
+                Style::new().fg(ui_theme::ERROR),
+            )];
+        }
+    };
+    let metrics = [
+        ("Work total", format_work_time(summary.work_ms)),
+        (
+            "Focus completed",
+            summary.completed_focus_sessions.to_string(),
+        ),
+        ("Distractions", summary.distractions.to_string()),
+        ("Returns", summary.returns.to_string()),
+    ];
+    let minimum = metrics
+        .iter()
+        .map(|(label, value)| label.len().max(value.len()) + 2)
+        .max()
+        .unwrap_or(1);
+    let columns = if usize::from(width) / 4 >= minimum {
+        4
+    } else if usize::from(width) / 2 >= minimum {
+        2
+    } else {
+        1
+    };
+    let cell_width = usize::from(width) / columns;
+    let mut lines = vec![Line::styled(
+        "─ History / Total ─",
+        Style::new().fg(ui_theme::MUTED),
+    )];
+    for group in metrics.chunks(columns) {
+        let mut labels = Vec::new();
+        let mut values = Vec::new();
+        for (label, value) in group {
+            labels.push(Span::styled(
+                format!("{label:<cell_width$}"),
+                Style::new().fg(ui_theme::MUTED),
             ));
-            footer.push(Line::from("y: Exit unsaved   n / Esc: Back"));
+            values.push(Span::raw(format!("{value:<cell_width$}")));
         }
-        InputContext::SaveBlocked => {
-            if let Some(pending) = app.pending_state() {
-                let (kind, status, ..) = timer_view(pending.snapshot());
-                footer.push(Line::from(format!(
-                    "Unconfirmed save: {} · {status}",
-                    session_label(kind)
-                )));
-            }
-            if !compact {
-                footer.push(Line::from("Timer and actions are paused."));
-            }
-            footer.push(Line::from("r: Retry save   Q: Confirm unsaved exit"));
-        }
-        InputContext::Normal => {
-            let [session, common] = app.normal_hint_lines();
-            footer.push(Line::from(session));
-            footer.push(Line::from(common));
-            if matches!(
-                app.state().snapshot().state,
-                ProgressState::AwaitingQuickStartDecision { .. }
-            ) {
-                footer.push(Line::from(if compact {
-                    "Choice time excluded."
-                } else {
-                    "Choice time is not counted. Continue starts a full Focus."
-                }));
-            }
-            if app.show_help() {
-                footer.push(Line::from(match app.state().snapshot().state {
-                    ProgressState::Ready { .. } => {
-                        "Settings are available while ready. Paused time is not counted."
-                    }
-                    ProgressState::Active { .. } => {
-                        "Reset keeps task and type; Skip advances; Cancel goes to Focus."
-                    }
-                    ProgressState::AwaitingQuickStartDecision { .. } => {
-                        if compact {
-                            "Settings unavailable during f/c choice."
-                        } else {
-                            "f: Finish; c: Continue to Focus. Settings unavailable."
-                        }
-                    }
-                }));
-            }
-        }
+        lines.push(Line::from(labels));
+        lines.push(Line::from(values));
     }
-    if !app.message().is_empty() {
-        footer.push(Line::from(app.message()));
-    }
-    footer
+    lines
 }
 
-fn panel(content: String, title: &str) -> Paragraph<'_> {
-    Paragraph::new(content)
-        .alignment(Alignment::Center)
-        .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title(title))
-}
-
-fn timer_view(
+pub(super) fn timer_view(
     snapshot: &PomodoroState,
 ) -> (SessionKind, &'static str, u64, u64, Option<&CurrentTask>) {
     match &snapshot.state {
@@ -306,7 +392,7 @@ fn timer_view(
     }
 }
 
-const fn session_label(kind: SessionKind) -> &'static str {
+pub(super) const fn session_label(kind: SessionKind) -> &'static str {
     match kind {
         SessionKind::Focus => "Focus",
         SessionKind::QuickStart => "Quick Start",

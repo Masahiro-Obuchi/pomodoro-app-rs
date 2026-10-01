@@ -16,6 +16,7 @@ pub use crate::settings::{SettingsDraft, SettingsField};
 
 mod actions;
 mod reflection;
+pub(crate) use actions::ControlHint;
 use actions::{NormalAction, NormalControls};
 use reflection::HistoryReflection;
 
@@ -241,8 +242,8 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
         }
     }
 
-    pub(crate) fn normal_hint_lines(&self) -> [String; 2] {
-        NormalControls::for_snapshot(self.state().snapshot()).hint_lines()
+    pub(crate) fn normal_hints(&self) -> [Vec<ControlHint>; 2] {
+        NormalControls::for_snapshot(self.state().snapshot()).hints()
     }
 
     fn open_settings(&mut self) {
