@@ -24,6 +24,10 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 const VALID: &[u8] =
     include_bytes!("../../../crates/pomodoro-platform/tests/fixtures/state_v1.json");
 
+#[path = "support/terminal_screen.rs"]
+mod terminal_screen;
+use terminal_screen::TerminalScreen;
+
 #[test]
 #[ignore = "PTY subprocess helper invoked by terminal integration tests"]
 fn terminal_probe() {
@@ -40,7 +44,7 @@ struct Tui {
     terminal_modes: File,
     initial_local_modes: LocalModes,
     output: Receiver<Vec<u8>>,
-    screen: vt100::Parser,
+    screen: TerminalScreen,
 }
 
 impl Tui {
@@ -91,7 +95,7 @@ impl Tui {
             terminal_modes,
             initial_local_modes,
             output,
-            screen: vt100::Parser::new(height, width, 0),
+            screen: TerminalScreen::new(height, width),
         }
     }
 
@@ -101,27 +105,11 @@ impl Tui {
 
     fn expect_all(&mut self, texts: &[&str]) {
         let deadline = Instant::now() + TIMEOUT;
-        let expected: Vec<String> = texts
-            .iter()
-            .map(|text| {
-                text.chars()
-                    .filter(|ch| {
-                        !ch.is_whitespace() && !matches!(ch, '│' | '─' | '┌' | '┐' | '└' | '┘')
-                    })
-                    .collect()
-            })
-            .collect();
         loop {
-            // Inspect the current terminal screen: a differential redraw can
-            // retain characters without sending their bytes a second time.
+            // A PTY read can end in the middle of a differential redraw.
+            // Inspect only the snapshot at the latest complete frame boundary.
             let emitted = self.screen.screen().contents();
-            let compact: String = emitted
-                .chars()
-                .filter(|ch| {
-                    !ch.is_whitespace() && !matches!(ch, '│' | '─' | '┌' | '┐' | '└' | '┘')
-                })
-                .collect();
-            if expected.iter().all(|text| compact.contains(text)) {
+            if self.screen.contains_all(texts) {
                 return;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -191,8 +179,8 @@ fn executable_opens_history_without_saving_and_returns_to_controls() {
     tui.send(b"q");
     assert!(tui.child.try_wait().unwrap().is_none());
     tui.send(b"\x1b");
-    // During a differential redraw, old key hints can remain below History.
-    // Wait for the main state as well before sending the next input after Esc.
+    // Wait for a completed main frame after Esc before sending q. The previous
+    // History expectation also requires a full frame with old controls cleared.
     tui.expect_all(&["Focus · Ready", "Space: Start"]);
     tui.send(b"q");
     assert!(tui.finish().success());
