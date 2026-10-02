@@ -2,13 +2,13 @@
 
 作成日：2026-10-02
 
-採用案：A「Neon Focus」。進捗は [Implementation Plan](IMPLEMENTATION_PLAN.md) のPhase 6で管理する。本書は既存TUIの描画を変更する順序、表示方針、検証と完了条件を定義する。振る舞いと保存成功の境界は [Product Spec](PRODUCT_SPEC.md) を参照する。
+採用案：A「Neon Focus」。進捗は [Implementation Plan](../IMPLEMENTATION_PLAN.md) のPhase 6で管理する。本書は既存TUIの描画を変更する順序、表示方針、検証と完了条件を定義する。振る舞いと保存成功の境界は [Product Spec](../PRODUCT_SPEC.md) を参照する。
 
 ## 1. 到達点
 
 黒に近い背景、ライムグリーンの大時計、細い区切り線、キーを強調した操作案内で、提示したNeon Focus案をRatatui上に実装する。残り時間を最も目立たせ、Sessionの種別・状態、Current Task、ラウンド進捗、既存の4指標を読み取りやすく配置する。
 
-![Neon Focusの採用イメージ](assets/neon-focus-proposal.png)
+![Neon Focusの採用イメージ](../assets/neon-focus-proposal.png)
 
 画像は見た目の参照であり、数値とTaskは表示例。実装では現在のsnapshotと既存の集計結果を表示する。文字の形・セルの縦横比は端末フォントに依存するため、配色・情報の順序・強弱を再現する。通常画面の目標サイズは80列×24行とし、大きい端末では余白を増やす。
 
@@ -152,7 +152,7 @@ Ratatuiの`TestBackend`で実際に表示された文字と代表セルの色を
 
 短いテスト設定でFocus→Break→Focus、Pause／Resume、Distraction／Return、Historyの開閉、Task／設定編集を確認する。通常サイズ→狭いサイズ→通常サイズのリサイズ、保存失敗→再試行、終了と再起動も既存経路で確認する。
 
-色とフォントの見た目はLinuxの実端末で確認する。Windows/macOSの実端末確認状況は既存の[対応OSの受入記録](WINDOWS_MACOS_W5_ACCEPTANCE.md)に従い、Linuxでの見た目の確認だけで他OSの実表示まで確認済みとしない。RGB色の再現やブロック文字の形が端末設定に依存する点を利用案内に記載する。
+色とフォントの見た目はLinuxの実端末で確認する。Windows/macOSの実端末確認状況は既存の[対応OSの受入記録](../WINDOWS_MACOS_W5_ACCEPTANCE.md)に従い、Linuxでの見た目の確認だけで他OSの実表示まで確認済みとしない。RGB色の再現やブロック文字の形が端末設定に依存する点を利用案内に記載する。
 
 ### 5.3 最終チェック
 
@@ -184,19 +184,19 @@ cargo +1.86.0 test --workspace --locked
 
 以下は実行ファイルをLinuxのVTE端末エンジン（GTK 3、80×24、Monospace 13）で起動して撮影した画面。縮小表示は24×17。仮想ディスプレイ上で実際の端末描画を確認し、集中・休憩・中断の色、日本語Task、編集画面、履歴、保存回復と終了確認を照合した。撮影用プロセスでは`NO_COLOR`を解除した。通常の起動は`NO_COLOR`を尊重する。
 
-![実装したNeon Focusの集中画面](assets/neon-focus-implemented.png)
+![実装したNeon Focusの集中画面](../assets/neon-focus-implemented.png)
 
 | 画面 | 撮影画像 |
 | --- | --- |
-| 休憩 | [シアンの時計](assets/neon-focus-break.png) |
-| 縮小表示・Pause | [24×17の通常文字時計と操作キー](assets/neon-focus-compact.png) |
-| Task編集 | [日本語Taskと未保存表示](assets/neon-focus-task-edit.png) |
-| 設定 | [選択行と操作キー](assets/neon-focus-settings.png) |
-| 保存回復 | [確認済み状態・未確定候補・再試行キー](assets/neon-focus-save-recovery.png) |
-| 初期画面のヘルプ | [始め方・Task・Quick Start・設定時間](assets/neon-focus-help.png) |
-| 実行中のヘルプ | [Pause・Distraction・Reset・Skip・Cancelの意味](assets/neon-focus-help-running.png) |
+| 休憩 | [シアンの時計](../assets/neon-focus-break.png) |
+| 縮小表示・Pause | [24×17の通常文字時計と操作キー](../assets/neon-focus-compact.png) |
+| Task編集 | [日本語Taskと未保存表示](../assets/neon-focus-task-edit.png) |
+| 設定 | [選択行と操作キー](../assets/neon-focus-settings.png) |
+| 保存回復 | [確認済み状態・未確定候補・再試行キー](../assets/neon-focus-save-recovery.png) |
+| 初期画面のヘルプ | [始め方・Task・Quick Start・設定時間](../assets/neon-focus-help.png) |
+| 実行中のヘルプ | [Pause・Distraction・Reset・Skip・Cancelの意味](../assets/neon-focus-help-running.png) |
 
-端末のセル比率やフォントによって大時計の形は参照画像と異なる。Windows/macOSの実端末による受入は引き続き[対応OSの受入記録](WINDOWS_MACOS_W5_ACCEPTANCE.md)を参照する。
+端末のセル比率やフォントによって大時計の形は参照画像と異なる。Windows/macOSの実端末による受入は引き続き[対応OSの受入記録](../WINDOWS_MACOS_W5_ACCEPTANCE.md)を参照する。
 
 ### 検証結果
 

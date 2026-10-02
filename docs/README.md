@@ -10,7 +10,6 @@
 | [Domain Model](DOMAIN_MODEL.md) | 状態、遷移、不変条件 |
 | [Persistence Schema](PERSISTENCE_SCHEMA.md) | 保存形式、検証、保存と復旧の契約 |
 | [Implementation Plan](IMPLEMENTATION_PLAN.md) | Phaseの順序、完了条件、現在の進捗 |
-| [Neon Focus TUI 実装計画](TUI_DESIGN_PLAN.md) | 採用した見た目、端末サイズへの対応、描画変更の順序と検証項目 |
 | [自動テスト・CI拡充計画](CI_EXPANSION_PLAN.md) | CI起動条件、OS別検証、追加する回帰テストとレビュー単位 |
 | [自動リリース整備計画](RELEASE_AUTOMATION_PLAN.md) | Linuxプレリリースの配布条件、タグworkflow、実物検査、Windows/macOS追加条件 |
 | [Windows / macOS 対応計画](WINDOWS_MACOS_PLAN.md) | 完了済みPhaseから独立したTUIの対応OS拡張計画 |
@@ -28,5 +27,6 @@
 | [Phase 3 Plan](archive/PHASE3_PLAN.md) | 完了したPhase 3の実行計画 |
 | [Phase 4 Plan](archive/PHASE4_PLAN.md) | 完了したPhase 4の実行計画 |
 | [Focus・Break自動開始 実装計画](archive/AUTO_START_PLAN.md) | 完了したPhase 5の実行計画 |
+| [Neon Focus TUI 実装計画](archive/TUI_DESIGN_PLAN.md) | 完了したPhase 6の実行計画 |
 
 過去資料の記述は作成当時の計画であり、現在の仕様や実装状況を示すものではない。
