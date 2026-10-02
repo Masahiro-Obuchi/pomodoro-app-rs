@@ -1,4 +1,5 @@
 //! Shared Neon Focus colors. State names accompany every state color.
+//! Crossterm suppresses emitted color parameters when `NO_COLOR` is nonempty.
 
 use pomodoro_core::{PomodoroState, ProgressState, SessionKind, TimerState};
 use ratatui::{
