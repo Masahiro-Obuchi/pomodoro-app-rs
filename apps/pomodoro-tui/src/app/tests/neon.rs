@@ -1,7 +1,7 @@
 use ratatui::{buffer::Buffer, style::Color};
 
 use super::*;
-use crate::ui_theme;
+use crate::{app::TimerDisplay, ui_theme};
 
 fn buffer(app: &TestApp, width: u16, height: u16) -> Buffer {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -147,23 +147,102 @@ fn maximum_duration_and_unicode_task_fit_without_losing_digits_or_graphemes() {
             Timestamp(0),
         )
         .unwrap();
-    let h = harness(domain, 0);
-    for (width, height, large) in [
-        (100, 30, true),
-        (80, 24, true),
-        (60, 24, true),
-        (30, 25, false),
-        (24, 17, false),
-    ] {
-        let screen = render(&h.app, width, height);
-        assert_eq!(screen.contains('█'), large, "{screen}");
-        assert_eq!(screen.contains("1440:00"), !large, "{screen}");
-        assert!(screen.contains("Space: Start"), "{screen}");
-        assert!(!screen.contains('�'), "{screen}");
+    let mut h = harness(domain, 0);
+    for text_timer in [false, true] {
+        h.app.set_timer_display(if text_timer {
+            TimerDisplay::Text
+        } else {
+            TimerDisplay::Blocks
+        });
+        for (width, height, large) in [
+            (100, 30, true),
+            (80, 24, true),
+            (60, 24, true),
+            (30, 25, false),
+            (24, 17, false),
+        ] {
+            let screen = render(&h.app, width, height);
+            assert_eq!(screen.contains('█'), large && !text_timer, "{screen}");
+            assert_eq!(screen.contains("1440:00"), !large || text_timer, "{screen}");
+            assert!(screen.contains("Space: Start"), "{screen}");
+            assert!(!screen.contains('�'), "{screen}");
+        }
     }
     let screen = render(&h.app, 80, 24);
     assert!(screen.contains("Round 0/4294967295"), "{screen}");
     assert!(screen.contains('…'), "{screen}");
+}
+
+#[test]
+fn text_timer_updates_the_countdown_and_progress_without_block_art() {
+    let mut h = harness(
+        DomainState::new(TimerConfig::new(10, 5, 15, 4).unwrap()).unwrap(),
+        0,
+    );
+    h.app.set_timer_display(TimerDisplay::Text);
+    press(&mut h.app, ' ');
+    for (at, remaining, percent) in [(1_000, "00:09", 10), (2_000, "00:08", 20)] {
+        h.at.set(at);
+        h.app.tick();
+        for (width, height, large) in [(100, 30, true), (80, 24, true), (24, 17, false)] {
+            let screen = render(&h.app, width, height);
+            assert_eq!(
+                screen.matches(&format!("REMAINING / {remaining}")).count(),
+                1
+            );
+            assert!(!screen.contains(['█', '▀', '▄', '▂']), "{screen}");
+            assert!(screen.contains("Space: Pause"), "{screen}");
+            assert_eq!(
+                screen.contains(&format!("Elapsed: {percent}%")),
+                large,
+                "{screen}"
+            );
+        }
+    }
+    press(&mut h.app, '?');
+    let screen = render(&h.app, 80, 24);
+    assert!(screen.contains("REMAINING / 00:08"), "{screen}");
+    assert!(screen.contains("Session duration: 00:10"), "{screen}");
+    assert!(screen.contains("?: Hide help"), "{screen}");
+}
+
+#[test]
+fn text_timer_save_recovery_shows_the_confirmed_time_and_required_controls() {
+    let mut h = harness(
+        DomainState::new(TimerConfig::new(10, 5, 15, 4).unwrap()).unwrap(),
+        0,
+    );
+    h.app.set_timer_display(TimerDisplay::Text);
+    press(&mut h.app, ' ');
+    let before = crate::ui::timer_view(h.app.state().snapshot()).2;
+    h.at.set(1_000);
+    h.failures.set(1);
+    press(&mut h.app, 'd');
+    let pending = h.app.pending_state().unwrap();
+    assert!(crate::ui::timer_view(pending.snapshot()).2 < before);
+    for (width, height) in [(80, 24), (24, 17)] {
+        let screen = render(&h.app, width, height);
+        assert!(
+            screen.contains(&format!(
+                "REMAINING / {}",
+                crate::ui_timer::format_time(before)
+            )),
+            "{screen}"
+        );
+        assert!(!screen.contains(['█', '▀', '▄', '▂']), "{screen}");
+        let compact: String = screen
+            .chars()
+            .filter(|ch| !ch.is_whitespace() && !matches!(ch, '│' | '─'))
+            .collect();
+        for phrase in [
+            "Lastsaved:Focus",
+            "Unconfirmedsave:Focus",
+            "r:Retrysave",
+            "Q:Confirmunsavedexit",
+        ] {
+            assert!(compact.contains(phrase), "missing {phrase}: {screen}");
+        }
+    }
 }
 
 #[test]

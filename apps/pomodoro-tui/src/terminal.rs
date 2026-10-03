@@ -3,7 +3,7 @@
 use std::{error::Error, io, time::Duration};
 
 use crate::{
-    app::App,
+    app::{App, TimerDisplay},
     controller::{Controller, ExitOutcome, Startup},
     startup_gate::StartupGate,
     ui,
@@ -26,6 +26,12 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 /// Returns startup, terminal, clock, or storage errors without adopting an
 /// uncertain save candidate.
 pub fn run(location: StorageLocation) -> Result<ExitOutcome, Box<dyn Error>> {
+    let timer_display = if std::env::var_os("POMODORO_TEXT_TIMER").is_some_and(|value| value == "1")
+    {
+        TimerDisplay::Text
+    } else {
+        TimerDisplay::Blocks
+    };
     // Lock and validate before entering the alternate screen. An unsupported or
     // broken state fails here without ever initializing a replacement.
     let startup_clock = ObservationClock::new()?;
@@ -67,6 +73,7 @@ pub fn run(location: StorageLocation) -> Result<ExitOutcome, Box<dyn Error>> {
     let clock = ObservationClock::new()?;
     let controller = Controller::from_saved(store, clock, DesktopNotifier)?;
     let mut app = App::new(controller);
+    app.set_timer_display(timer_display);
     while !app.should_quit() {
         app.tick();
         terminal.draw(|frame| ui::draw(frame, &app))?;

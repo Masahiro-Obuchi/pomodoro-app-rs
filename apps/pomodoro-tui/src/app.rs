@@ -38,10 +38,17 @@ pub(crate) enum InputContext {
     Normal,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TimerDisplay {
+    Blocks,
+    Text,
+}
+
 pub struct App<S, C, N> {
     controller: Controller<S, C, N>,
     history_reflection: RefCell<HistoryReflection>,
     show_help: bool,
+    timer_display: TimerDisplay,
     settings: Option<SettingsDraft>,
     task_edit: Option<String>,
     history_open: bool,
@@ -57,6 +64,7 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
             controller,
             history_reflection: RefCell::default(),
             show_help: false,
+            timer_display: TimerDisplay::Blocks,
             settings: None,
             task_edit: None,
             history_open: false,
@@ -93,6 +101,14 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     #[must_use]
     pub const fn show_help(&self) -> bool {
         self.show_help
+    }
+
+    pub(crate) const fn timer_display(&self) -> TimerDisplay {
+        self.timer_display
+    }
+
+    pub(crate) const fn set_timer_display(&mut self, display: TimerDisplay) {
+        self.timer_display = display;
     }
 
     #[must_use]
