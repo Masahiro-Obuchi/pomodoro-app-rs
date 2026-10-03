@@ -1,6 +1,6 @@
 # Implementation Plan
 
-更新日：2026-09-30
+更新日：2026-10-02
 
 この文書は拡張MVPの開発順序、Phaseの目的・依存関係・完了条件、Phase単位の進捗を管理する。初期Pomodoroの旧計画を置き換える。過去の内容はGit履歴で参照できる。
 
@@ -33,6 +33,7 @@
 | 3 | TUIで着手・集中・復帰の一連の操作ができる | Phase 2 | 完了 | Current Task、Quick Start、Distraction／Return、中止、Break、保存失敗と復元をTUIで検証。全workspace、実ファイル・PTY、Rust 1.86を確認。[詳細計画（過去資料）](archive/PHASE3_PLAN.md) |
 | 4 | 記録を確認でき、MVPの完了を判断できる | Phase 3 | 完了 | 4指標のTUI表示と当時のProduct Spec第10節の7例を、保存記録・再起動・画面で検証。全workspaceとRust 1.86のビルド・テストを確認。[詳細計画（過去資料）](archive/PHASE4_PLAN.md) |
 | 5 | Focus・Breakの自然完了後に次Sessionを自動開始する | Phase 4 | 完了 | コア遷移、保存・通知、TUI、V1実ファイル往復と疑似端末を検証。[詳細計画](archive/AUTO_START_PLAN.md) |
+| 6 | Neon Focusの見た目を既存TUIへ実装する | Phase 5 | 完了 | 共通テーマ、大時計、縮小表示、各画面の統一を実装。描画・疑似端末とLinuxのVTE端末で表示を確認。[詳細計画・実画面](archive/TUI_DESIGN_PLAN.md) |
 
 ## 3. Phase構成
 
@@ -99,6 +100,13 @@ Phase 2の既存操作・保存接続を基盤に、新しい作業開始・脱�
 - **依存関係**：Phase 4までの既存実装と、改定済みのProduct Spec・Domain Model・Persistence Schema。
 - **完了条件**：自然完了と次Sessionの一括保存、Task継承、保存失敗・終了・Observation Gapでの停止、旧V1保存データとの互換性を[詳細計画](archive/AUTO_START_PLAN.md)の検証で確認できる。
 
+### Phase 6：Neon Focus TUI
+
+- **目的**：採用したNeon Focus案の配色と大時計を既存TUIへ実装し、状態と操作を読み取りやすくする。
+- **変更対象**：共通テーマ、メイン画面、時計の描画、操作ヒント、履歴・編集・起動画面、表示・疑似端末テスト、利用案内。
+- **依存関係**：Phase 5までの既存操作・保存・自動開始経路。
+- **完了条件**：採用案に沿った実画面を確認し、端末サイズ・文字列の長さ・保存回復に対応できることを[詳細計画](archive/TUI_DESIGN_PLAN.md)の検証で確認する。
+
 ## 4. 各Phaseに共通する完了の判断
 
 - 対象Phaseの完了条件を満たし、仕様文書と実装の間に未説明の差がない。
@@ -108,4 +116,4 @@ Phase 2の既存操作・保存接続を基盤に、新しい作業開始・脱�
 
 ## 5. MVP後の扱い
 
-Later Box、AI、GUI、統計表示の拡充はProduct Specに従ってMVP外とする。Focus・Breakの自動開始はPhase 5で扱い、その先の固定PhaseやGUI技術は先に決めない。
+Later Box、AI、GUI、統計表示の拡充はProduct Specに従ってMVP外とする。Focus・Breakの自動開始はPhase 5、採用したTUIの見た目はPhase 6で扱い、その先の固定PhaseやGUI技術は先に決めない。

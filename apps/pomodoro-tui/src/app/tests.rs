@@ -14,7 +14,9 @@ use super::*;
 
 mod cancel;
 mod distraction;
+mod help;
 mod history;
+mod neon;
 mod quick_start;
 mod reflection;
 mod task;
@@ -198,6 +200,19 @@ fn assert_running(app: &TestApp) {
             ..
         }
     ));
+}
+
+fn assert_metric(screen: &str, label: &str, value: &str) {
+    let lines = screen.lines().collect::<Vec<_>>();
+    let row = lines
+        .iter()
+        .position(|line| line.contains(label))
+        .unwrap_or_else(|| panic!("missing {label}: {screen}"));
+    let column = lines[row].find(label).unwrap();
+    assert!(
+        lines[row + 1][column..].trim_start().starts_with(value),
+        "wrong {label}: {screen}"
+    );
 }
 
 #[test]
@@ -571,7 +586,7 @@ fn all_restored_interruption_kinds_render_and_offer_the_correct_resume_command()
             };
             assert!(display.contains(space_hint), "{display}");
             assert!(!display.contains("s: Settings"));
-            assert!(display.contains("Total:"));
+            assert!(display.contains("Work total"));
             assert!(!display.contains("Today:"));
             if kind.is_work() {
                 assert!(display.contains("原稿を書く"));

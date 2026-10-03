@@ -15,20 +15,26 @@ pub(super) enum NormalAction {
 
 struct Binding {
     key: KeyCode,
-    hint: Option<&'static str>,
+    hint: Option<ControlHint>,
     action: NormalAction,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ControlHint {
+    pub(crate) key: &'static str,
+    pub(crate) description: &'static str,
+}
+
 impl Binding {
-    fn new(key: char, hint: Option<&'static str>, action: NormalAction) -> Self {
+    fn new(key: char, hint: Option<(&'static str, &'static str)>, action: NormalAction) -> Self {
         Self {
             key: KeyCode::Char(key),
-            hint,
+            hint: hint.map(|(key, description)| ControlHint { key, description }),
             action,
         }
     }
 
-    fn command(key: char, hint: &'static str, command: Command) -> Self {
+    fn command(key: char, hint: (&'static str, &'static str), command: Command) -> Self {
         Self::new(key, Some(hint), NormalAction::Command(command))
     }
 }
@@ -41,25 +47,25 @@ pub(super) struct NormalControls {
 }
 
 impl NormalControls {
-    pub(super) fn for_snapshot(snapshot: &PomodoroState) -> Self {
+    pub(super) fn for_snapshot(snapshot: &PomodoroState, help_visible: bool) -> Self {
         let session = match &snapshot.state {
             ProgressState::Ready { next_kind, .. } => {
                 let mut bindings = vec![
-                    Binding::command(' ', "Space: Start", Command::Start(*next_kind)),
-                    Binding::command('r', "r: Reset", Command::ResetReady),
-                    Binding::command('n', "n: Skip", Command::SkipReady),
+                    Binding::command(' ', ("Space", "Start"), Command::Start(*next_kind)),
+                    Binding::command('r', ("r", "Reset"), Command::ResetReady),
+                    Binding::command('n', ("n", "Skip"), Command::SkipReady),
                 ];
                 if next_kind.is_work() {
                     bindings.push(Binding::new(
                         't',
-                        Some("t: Edit task"),
+                        Some(("t", "Edit task")),
                         NormalAction::RequestTask,
                     ));
                 }
                 if *next_kind == SessionKind::Focus {
                     bindings.push(Binding::command(
                         '2',
-                        "2: Quick Start (2 min)",
+                        ("2", "Quick Start (2 min)"),
                         Command::Start(SessionKind::QuickStart),
                     ));
                 }
@@ -72,7 +78,7 @@ impl NormalControls {
             } => vec![
                 Binding::command(
                     'f',
-                    "f: Finish Quick Start",
+                    ("f", "Finish Quick Start"),
                     Command::DecideQuickStart {
                         session_id: *quick_start_session_id,
                         choice: QuickStartChoice::Finish,
@@ -80,7 +86,7 @@ impl NormalControls {
                 ),
                 Binding::command(
                     'c',
-                    "c: Continue to Focus",
+                    ("c", "Continue to Focus"),
                     Command::DecideQuickStart {
                         session_id: *quick_start_session_id,
                         choice: QuickStartChoice::Continue,
@@ -89,14 +95,18 @@ impl NormalControls {
             ],
         };
         let settings_hint =
-            matches!(snapshot.state, ProgressState::Ready { .. }).then_some("s: Settings");
+            matches!(snapshot.state, ProgressState::Ready { .. }).then_some(("s", "Settings"));
         let common = vec![
-            Binding::new('h', Some("h: History"), NormalAction::OpenHistory),
+            Binding::new('h', Some(("h", "History")), NormalAction::OpenHistory),
             // Keep the existing explanation for s outside Ready, but do not
             // advertise settings as an available operation there.
             Binding::new('s', settings_hint, NormalAction::RequestSettings),
-            Binding::new('?', Some("?: Help"), NormalAction::ToggleHelp),
-            Binding::new('q', Some("q: Save & quit"), NormalAction::Shutdown),
+            Binding::new(
+                '?',
+                Some(("?", if help_visible { "Hide help" } else { "Help" })),
+                NormalAction::ToggleHelp,
+            ),
+            Binding::new('q', Some(("q", "Save & quit")), NormalAction::Shutdown),
         ];
         Self { session, common }
     }
@@ -109,26 +119,26 @@ impl NormalControls {
             .map(|binding| binding.action)
     }
 
-    pub(super) fn hint_lines(&self) -> [String; 2] {
+    pub(super) fn hints(&self) -> [Vec<ControlHint>; 2] {
         [hints(&self.session), hints(&self.common)]
     }
 }
 
 fn active_bindings(session: &Session, timer: &TimerState) -> Vec<Binding> {
     let (space_hint, space_command) = match timer {
-        TimerState::Running { .. } => ("Space: Pause", Command::Pause(session.id)),
+        TimerState::Running { .. } => (("Space", "Pause"), Command::Pause(session.id)),
         TimerState::Interrupted { interruption }
             if interruption.kind == InterruptionKind::Distraction =>
         {
-            ("Space: Return", Command::Return(session.id))
+            (("Space", "Return"), Command::Return(session.id))
         }
-        TimerState::Interrupted { .. } => ("Space: Resume", Command::Resume(session.id)),
+        TimerState::Interrupted { .. } => (("Space", "Resume"), Command::Resume(session.id)),
     };
     let mut bindings = vec![
         Binding::command(' ', space_hint, space_command),
         Binding::command(
             'r',
-            "r: Reset",
+            ("r", "Reset"),
             Command::End {
                 session_id: session.id,
                 outcome: SessionOutcome::Reset,
@@ -136,7 +146,7 @@ fn active_bindings(session: &Session, timer: &TimerState) -> Vec<Binding> {
         ),
         Binding::command(
             'n',
-            "n: Skip",
+            ("n", "Skip"),
             Command::End {
                 session_id: session.id,
                 outcome: SessionOutcome::Skipped,
@@ -144,7 +154,7 @@ fn active_bindings(session: &Session, timer: &TimerState) -> Vec<Binding> {
         ),
         Binding::command(
             'x',
-            "x: Cancel",
+            ("x", "Cancel"),
             Command::End {
                 session_id: session.id,
                 outcome: SessionOutcome::Cancelled,
@@ -154,17 +164,13 @@ fn active_bindings(session: &Session, timer: &TimerState) -> Vec<Binding> {
     if session.kind.is_work() && matches!(timer, TimerState::Running { .. }) {
         bindings.push(Binding::command(
             'd',
-            "d: Report distraction",
+            ("d", "Report distraction"),
             Command::Distraction(session.id),
         ));
     }
     bindings
 }
 
-fn hints(bindings: &[Binding]) -> String {
-    bindings
-        .iter()
-        .filter_map(|binding| binding.hint)
-        .collect::<Vec<_>>()
-        .join("   ")
+fn hints(bindings: &[Binding]) -> Vec<ControlHint> {
+    bindings.iter().filter_map(|binding| binding.hint).collect()
 }

@@ -30,7 +30,7 @@ fn cancel_ends_every_running_kind_and_keeps_credited_work() {
         let display = render(&h.app, 100, 30);
         assert!(display.contains("x: Cancel"), "{kind:?}: {display}");
         press(&mut h.app, '?');
-        assert!(render(&h.app, 80, 25).contains("Cancel goes to Focus"));
+        assert!(render(&h.app, 80, 25).contains("x cancels to Focus start"));
         h.at.set(100);
         press(&mut h.app, 'x');
         ended_with(&h.app, SessionOutcome::Cancelled);

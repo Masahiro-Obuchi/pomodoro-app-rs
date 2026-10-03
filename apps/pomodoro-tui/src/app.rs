@@ -16,6 +16,7 @@ pub use crate::settings::{SettingsDraft, SettingsField};
 
 mod actions;
 mod reflection;
+pub(crate) use actions::ControlHint;
 use actions::{NormalAction, NormalControls};
 use reflection::HistoryReflection;
 
@@ -217,7 +218,8 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
     }
 
     fn handle_normal_key(&mut self, key: KeyCode) {
-        let action = NormalControls::for_snapshot(self.state().snapshot()).action_for_key(key);
+        let action = NormalControls::for_snapshot(self.state().snapshot(), self.show_help)
+            .action_for_key(key);
         match action {
             Some(NormalAction::OpenHistory) => {
                 self.history_open = true;
@@ -241,8 +243,8 @@ impl<S: SaveStore, C: Clock, N: CompletionNotifier> App<S, C, N> {
         }
     }
 
-    pub(crate) fn normal_hint_lines(&self) -> [String; 2] {
-        NormalControls::for_snapshot(self.state().snapshot()).hint_lines()
+    pub(crate) fn normal_hints(&self) -> [Vec<ControlHint>; 2] {
+        NormalControls::for_snapshot(self.state().snapshot(), self.show_help).hints()
     }
 
     fn open_settings(&mut self) {

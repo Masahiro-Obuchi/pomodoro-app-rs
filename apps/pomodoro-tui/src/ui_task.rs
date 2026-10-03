@@ -1,13 +1,13 @@
 use ratatui::{
     Frame,
     layout::Alignment,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Clear, Paragraph, Wrap},
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::ui_settings::centered;
+use crate::{ui_footer::controls, ui_settings::centered, ui_theme};
 
 pub(crate) fn draw_task(frame: &mut Frame<'_>, text: &str, message: &str) {
     let area = centered(frame.area(), 72, 9);
@@ -19,26 +19,26 @@ pub(crate) fn draw_task(frame: &mut Frame<'_>, text: &str, message: &str) {
     };
     let mut lines = vec![
         Line::from(value),
-        Line::from("Enter: Save"),
-        Line::from("Esc: Cancel"),
+        controls(&[("Enter", "Save")], ui_theme::FOCUS),
+        controls(&[("Esc", "Cancel")], ui_theme::FOCUS),
     ];
     if !message.is_empty() {
         lines.push(Line::from(Span::styled(
             message.to_owned(),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(ui_theme::WAITING),
         )));
     }
+    let title = if area.width >= 31 {
+        " Current Task · unsaved edit "
+    } else {
+        " Task · unsaved edit "
+    };
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Current Task · unsaved edit ")
-                    .style(Style::default().bg(Color::Black)),
-            ),
+            .block(ui_theme::panel(title)),
         area,
     );
 }

@@ -40,7 +40,6 @@ struct Tui {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     output: Receiver<Vec<u8>>,
-    received: Vec<u8>,
     screen: vt100::Parser,
 }
 
@@ -56,6 +55,9 @@ impl Tui {
             .unwrap();
         let mut command = CommandBuilder::new(executable());
         command.env("POMODORO_STATE_DIR", directory);
+        // Verify emitted theme colors independently of the test runner's
+        // optional preference for colorless command output.
+        command.env_remove("NO_COLOR");
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         command.env("TERM", "xterm-256color");
         let child = pty.slave.spawn_command(command).unwrap();
@@ -85,7 +87,6 @@ impl Tui {
             master: pty.master,
             writer,
             output,
-            received: Vec::new(),
             screen: vt100::Parser::new(height, width, 0),
         }
     }
@@ -95,34 +96,7 @@ impl Tui {
     }
 
     fn expect_all(&mut self, phrases: &[&str]) {
-        let compact = |text: &str| {
-            text.chars()
-                .filter(|ch| {
-                    !ch.is_whitespace() && !matches!(ch, '│' | '─' | '┌' | '┐' | '└' | '┘')
-                })
-                .collect::<String>()
-        };
-        let expected: Vec<_> = phrases.iter().map(|phrase| compact(phrase)).collect();
-        let deadline = Instant::now() + TIMEOUT;
-        loop {
-            let emitted = without_csi(&self.received);
-            let text = compact(&emitted);
-            if expected.iter().all(|phrase| text.contains(phrase)) {
-                self.received.clear();
-                return;
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            match self.output.recv_timeout(remaining) {
-                Ok(bytes) => {
-                    self.screen.process(&bytes);
-                    self.received.extend(bytes);
-                }
-                Err(error) => panic!(
-                    "waiting for {phrases:?}: {error}; child: {:?}; output: {emitted}",
-                    self.child.try_wait().unwrap()
-                ),
-            }
-        }
+        self.expect_screen_all(phrases);
     }
 
     fn expect_screen(&mut self, phrase: &str) {
@@ -186,6 +160,26 @@ impl Tui {
         );
     }
 
+    fn assert_clock_color(&self, color: vt100::Color) {
+        let screen = self.screen.screen();
+        let (rows, columns) = screen.size();
+        let mut found = false;
+        for row in 0..rows {
+            for column in 0..columns {
+                let cell = screen.cell(row, column).unwrap();
+                if cell.contents() == "█" {
+                    assert_eq!(cell.fgcolor(), color);
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "large clock must be present");
+        assert_eq!(
+            screen.cell(0, 0).unwrap().bgcolor(),
+            vt100::Color::Rgb(12, 17, 16)
+        );
+    }
+
     fn send(&mut self, keys: &[u8]) {
         self.writer.write_all(keys).unwrap();
         self.writer.flush().unwrap();
@@ -222,27 +216,6 @@ impl Drop for Tui {
     }
 }
 
-fn without_csi(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let mut chars = text.chars().peekable();
-    let mut result = String::new();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
-            chars.next();
-            for ch in chars.by_ref() {
-                if ('@'..='~').contains(&ch) {
-                    break;
-                }
-            }
-        } else if ch == '\u{8}' {
-            result.pop();
-        } else {
-            result.push(ch);
-        }
-    }
-    result
-}
-
 #[test]
 fn native_pty_can_edit_start_resize_and_restore_saved_state() {
     let directory = tempfile::tempdir().unwrap();
@@ -258,11 +231,21 @@ fn native_pty_can_edit_start_resize_and_restore_saved_state() {
     tui.send(b"\r");
     tui.expect("Task saved");
     tui.send(b" ");
-    tui.expect("Running");
+    tui.expect_screen_all(&["Focus · Running", "Space: Pause"]);
+    tui.assert_clock_color(vt100::Color::Rgb(169, 243, 107));
     tui.resize(24, 17);
     tui.expect("d: Report distraction");
     tui.send(b"d");
     tui.expect("Distraction saved");
+    tui.resize(80, 24);
+    tui.expect_screen_all(&[
+        "Distracted · Awaiting Return",
+        "Space: Return",
+        "CURRENT TASK",
+        "原稿を書く",
+    ]);
+    tui.assert_screen_absent("Task:");
+    tui.assert_clock_color(vt100::Color::Rgb(237, 194, 118));
     tui.send(b" ");
     tui.send(b"q");
     assert!(tui.finish().success());

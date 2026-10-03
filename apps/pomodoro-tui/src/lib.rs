@@ -13,8 +13,18 @@ pub mod terminal;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub mod ui;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod ui_footer;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod ui_help;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod ui_history;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod ui_settings;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod ui_task;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod ui_text;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod ui_theme;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod ui_timer;

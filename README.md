@@ -9,6 +9,7 @@ The project currently provides a terminal user interface built with Ratatui. The
 
 ## Current features
 
+- Neon Focus theme with a large clock, state colors, and highlighted operation keys
 - 25-minute focus sessions, 5-minute short breaks, and 15-minute long breaks
 - Long break after every four completed focus sessions
 - Automatic short/long break after a completed focus session, then automatic focus after the break while the app is running
@@ -46,6 +47,7 @@ The [Windows and macOS plan](docs/WINDOWS_MACOS_PLAN.md) tracks a separate expan
 
 - Linux with a local filesystem for saved state
 - A terminal supported by Crossterm
+- An RGB color terminal and a monospace font with Unicode block characters for the intended appearance (80 columns × 24 rows recommended)
 - `notify-send` for Linux desktop notifications (optional)
 
 ## Linux prerelease
@@ -68,6 +70,10 @@ POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
 
 ### Controls
 
+![Neon Focus running in an 80×24 VTE terminal](docs/assets/neon-focus-implemented.png)
+
+Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick Start choices use amber, and save recovery uses red. State names and operation keys remain visible alongside the colors. A nonempty `NO_COLOR` value disables theme colors through Crossterm's output layer; unset it or use an empty value to enable colors. The clock uses half block characters to leave room between the time, caption, progress bar, task, totals, and controls. Plain horizontal rules separate the sections. Ordinary text uses the terminal's font size; the app cannot set a different point size for each section. Color reproduction, block shapes, and Japanese or emoji glyphs depend on your terminal and font.
+
 | Key | Action |
 | --- | --- |
 | `Space` | Start, pause, resume, or return from a distraction |
@@ -79,14 +85,18 @@ POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
 | `x` | Cancel an active session and return to Focus start |
 | `s` | Open settings while Ready (waiting to start) |
 | `h` | Open the History view during normal operation; `h` or `Esc` returns |
-| `?` | Toggle help |
+| `?` | Show or hide help for the current state |
 | `q` | Save and quit |
+
+`REMAINING / 24:59` shows the remaining time, matching the large clock. Press `?` for a labeled help section: the initial screen explains how to start, set a task, and try Quick Start; running and interrupted sessions explain their available operations. Help also shows the full session duration, such as `Session duration: 25:00`. Press `?` again (`Hide help`) to close it. Opening help does not pause the timer. A blank line separates the keys from help and status messages when space permits.
+
+![Getting started help in an 80×24 VTE terminal](docs/assets/neon-focus-help.png)
 
 At a Quick Start decision, `f` finishes and `c` starts a new, full-length linked Focus session. Time spent choosing is not counted, and the choice is still waiting after an exit and restart. A saved Current Task is carried into Quick Start and its continued Focus. Resetting Quick Start keeps its task; press `t` to edit it before restarting with `Space`. From a Break start screen, press `n` to return to Focus start before choosing Quick Start. During a running Focus or Quick Start, `d` records a distraction and stops work time. `Space` records Return and resumes the remaining work time, including after an exit and restart. While any session is running or interrupted, `x` ends that attempt and returns to Focus start. Credited work time remains in history; cancelling a distraction does not record a Return. A naturally completed Focus starts the next break automatically; a naturally completed break starts the next Focus and carries over the previous Focus's Current Task. The first Focus and sessions scheduled after a skip, cancel, or reset still need a manual start. App closure, observation gaps, and save failures stop timing and require manual resumption.
 
 The History view shows recorded work time from Focus and Quick Start, naturally completed Focus sessions, reported distractions, and explicit Returns across all records, including the current session. Pause, distraction, break, and Quick Start choice time do not add work time. Work time uses `H:MM:SS`; subsecond time is truncated only for display. While a session runs, the shown time may include progress since the latest saved checkpoint. Opening History does not pause the timer or save state. If a save fails while it is open, the recovery controls take priority. During a pending save, the main screen shows the latest confirmed saved state and keeps the unconfirmed candidate separate.
 
-On short or narrow terminals, the timer hides the progress gauge and cumulative summary when their space is needed for operation and save recovery controls. Press `h` to view the totals when the summary is hidden. If the recovery keys or History view cannot fit, the screen asks you to enlarge the terminal. Enlarge the terminal to see the gauge and summary again.
+On short or narrow terminals, the large clock switches to ordinary text, and the progress gauge and cumulative summary are hidden when their space is needed for operation and save recovery controls. Long task names are shortened for display; the stored task remains complete. Press `h` to view the totals when the summary is hidden. Narrow settings show the selected field when the complete form cannot fit; use the arrow keys to reach the other fields. If the required controls or History view cannot fit, the screen asks you to enlarge the terminal. Enlarge the terminal to restore the large clock, gauge, and summary.
 
 In the Current Task editor, type a single line and press `Enter` to save, or `Esc` to cancel. `Backspace` removes the last visible character. The editor starts with the saved task, if any. An empty or whitespace-only line clears it; surrounding whitespace is trimmed when saved. Editing does not change the saved file until `Enter`. Ordinary letters, including `q`, `?`, and `2`, are task text while the editor is open. Terminals that send bracketed paste allow one-line paste; a paste containing line breaks or control characters is rejected as one input. A terminal that sends paste as ordinary keys cannot distinguish it from typing: the first newline can confirm the task and later characters may trigger normal controls. Paste a single-line task in that case.
 

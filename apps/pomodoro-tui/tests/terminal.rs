@@ -24,6 +24,10 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 const VALID: &[u8] =
     include_bytes!("../../../crates/pomodoro-platform/tests/fixtures/state_v1.json");
 
+#[path = "support/terminal_screen.rs"]
+mod terminal_screen;
+use terminal_screen::TerminalScreen;
+
 #[test]
 #[ignore = "PTY subprocess helper invoked by terminal integration tests"]
 fn terminal_probe() {
@@ -40,7 +44,7 @@ struct Tui {
     terminal_modes: File,
     initial_local_modes: LocalModes,
     output: Receiver<Vec<u8>>,
-    received: Vec<u8>,
+    screen: TerminalScreen,
 }
 
 impl Tui {
@@ -49,6 +53,15 @@ impl Tui {
     }
 
     fn spawn_sized(directory: &Path, width: u16, height: u16) -> Self {
+        Self::spawn_sized_with_color_env(directory, width, height, None)
+    }
+
+    fn spawn_sized_with_color_env(
+        directory: &Path,
+        width: u16,
+        height: u16,
+        no_color: Option<&str>,
+    ) -> Self {
         let flags = OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC;
         let master = openpt(flags).unwrap();
         unlockpt(&master).unwrap();
@@ -66,15 +79,20 @@ impl Tui {
         let initial_local_modes = tcgetattr(&slave).unwrap().local_modes;
         let terminal_modes = slave.try_clone().unwrap();
         let input = File::from(master);
-        let child = Command::new(std::env::current_exe().unwrap())
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
             .args(["--exact", "terminal_probe", "--ignored", "--nocapture"])
             .env("XDG_STATE_HOME", directory)
             .env("TERM", "xterm-256color")
             .stdin(slave.try_clone().unwrap())
             .stdout(slave.try_clone().unwrap())
-            .stderr(slave)
-            .spawn()
-            .unwrap();
+            .stderr(slave);
+        if let Some(value) = no_color {
+            command.env("NO_COLOR", value);
+        } else {
+            command.env_remove("NO_COLOR");
+        }
+        let child = command.spawn().unwrap();
         let mut reader = input.try_clone().unwrap();
         let (sender, output) = mpsc::channel();
         std::thread::spawn(move || {
@@ -91,7 +109,7 @@ impl Tui {
             terminal_modes,
             initial_local_modes,
             output,
-            received: Vec::new(),
+            screen: TerminalScreen::new(height, width),
         }
     }
 
@@ -100,23 +118,25 @@ impl Tui {
     }
 
     fn expect_all(&mut self, texts: &[&str]) {
+        self.expect_all_with_output(texts);
+    }
+
+    fn expect_all_with_output(&mut self, texts: &[&str]) -> Vec<u8> {
         let deadline = Instant::now() + TIMEOUT;
-        let expected: Vec<String> = texts
-            .iter()
-            .map(|text| text.chars().filter(|ch| !ch.is_whitespace()).collect())
-            .collect();
+        let mut output = Vec::new();
         loop {
-            // Ratatui may position spaces with cursor commands rather than
-            // emitting them. Compare the visible words without whitespace.
-            let emitted = without_csi(&self.received);
-            let compact: String = emitted.chars().filter(|ch| !ch.is_whitespace()).collect();
-            if expected.iter().all(|text| compact.contains(text)) {
-                self.received.clear();
-                return;
+            // A PTY read can end in the middle of a differential redraw.
+            // Inspect only the snapshot at the latest complete frame boundary.
+            let emitted = self.screen.screen().contents();
+            if self.screen.contains_all(texts) {
+                return output;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             match self.output.recv_timeout(remaining) {
-                Ok(bytes) => self.received.extend(bytes),
+                Ok(bytes) => {
+                    self.screen.process(&bytes);
+                    output.extend(bytes);
+                }
                 Err(error) => panic!("waiting for {texts:?}: {error}; output: {emitted}"),
             }
         }
@@ -144,25 +164,6 @@ impl Tui {
     }
 }
 
-fn without_csi(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let mut chars = text.chars().peekable();
-    let mut result = String::new();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
-            chars.next();
-            for ch in chars.by_ref() {
-                if ('@'..='~').contains(&ch) {
-                    break;
-                }
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-    result
-}
-
 impl Drop for Tui {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -188,6 +189,52 @@ fn paste(tui: &mut Tui, text: &str) {
 }
 
 #[test]
+fn executable_respects_nonempty_no_color_and_keeps_colors_when_empty_or_unset() {
+    for value in [Some("1"), Some("0"), Some(""), None] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut tui = Tui::spawn_sized_with_color_env(dir.path(), 80, 24, value);
+        let output = tui.expect_all_with_output(&["Focus · Ready", "Space: Start", "?: Help"]);
+        assert!(!output.is_empty(), "must inspect the executable's output");
+        let has_sequence = |sequence: &[u8]| {
+            output
+                .windows(sequence.len())
+                .any(|window| window == sequence)
+        };
+        let screen = tui.screen.screen();
+        if value.is_some_and(|value| !value.is_empty()) {
+            assert!(
+                !has_sequence(b"\x1b[38;") && !has_sequence(b";38;"),
+                "foreground color with {value:?}"
+            );
+            assert!(
+                !has_sequence(b"\x1b[48;") && !has_sequence(b";48;"),
+                "background color with {value:?}"
+            );
+            let (rows, columns) = screen.size();
+            for row in 0..rows {
+                for column in 0..columns {
+                    let cell = screen.cell(row, column).unwrap();
+                    assert_eq!(cell.fgcolor(), vt100::Color::Default, "NO_COLOR={value:?}");
+                    assert_eq!(cell.bgcolor(), vt100::Color::Default, "NO_COLOR={value:?}");
+                }
+            }
+        } else {
+            assert!(has_sequence(b"\x1b[38;2;"), "RGB foreground expected");
+            assert!(
+                has_sequence(b"\x1b[48;2;") || has_sequence(b";48;2;"),
+                "RGB background expected"
+            );
+            assert_eq!(
+                screen.cell(0, 0).unwrap().bgcolor(),
+                vt100::Color::Rgb(12, 17, 16)
+            );
+        }
+        tui.send(b"q");
+        assert!(tui.finish().success());
+    }
+}
+
+#[test]
 fn executable_opens_history_without_saving_and_returns_to_controls() {
     let dir = tempfile::tempdir().unwrap();
     let location = location(dir.path());
@@ -200,7 +247,9 @@ fn executable_opens_history_without_saving_and_returns_to_controls() {
     tui.send(b"q");
     assert!(tui.child.try_wait().unwrap().is_none());
     tui.send(b"\x1b");
-    tui.expect("Space: Start");
+    // Wait for a completed main frame after Esc before sending q. The previous
+    // History expectation also requires a full frame with old controls cleared.
+    tui.expect_all(&["Focus · Ready", "Space: Start"]);
     tui.send(b"q");
     assert!(tui.finish().success());
     let store = loaded(&location);
@@ -248,7 +297,7 @@ fn executable_automatically_runs_break_then_focus_with_the_same_task() {
     tui.send(b" ");
     tui.expect("Session started and saved");
     tui.expect("Short Break");
-    tui.expect("Task: write chapter");
+    tui.expect_all(&["Focus · Running", "CURRENT TASK", "write chapter"]);
     tui.send(b"q");
     assert!(tui.finish().success());
 
@@ -361,7 +410,12 @@ fn bracketed_multiline_paste_stays_in_task_editor_and_plain_key_stream_can_confi
     drop(store);
 
     let mut tui = Tui::spawn(dir.path());
-    tui.expect("Task: a");
+    tui.expect_all(&["CURRENT TASK", "a", "Space: Start"]);
+    let screen = tui.screen.screen().contents();
+    let mut lines = screen.lines();
+    lines.find(|line| line.contains("CURRENT TASK")).unwrap();
+    let task = lines.next().unwrap().trim().trim_matches('│').trim();
+    assert_eq!(task, "a", "restored task must appear in full: {screen}");
     tui.send(b"t");
     tui.expect("Current Task · unsaved edit");
     // A terminal without bracketed paste sends ordinary keys. Its first Enter
