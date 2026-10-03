@@ -58,6 +58,7 @@ impl Tui {
         // Verify emitted theme colors independently of the test runner's
         // optional preference for colorless command output.
         command.env_remove("NO_COLOR");
+        command.env_remove("POMODORO_TEXT_TIMER");
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         command.env("TERM", "xterm-256color");
         let child = pty.slave.spawn_command(command).unwrap();

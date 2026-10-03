@@ -62,6 +62,16 @@ impl Tui {
         height: u16,
         no_color: Option<&str>,
     ) -> Self {
+        Self::spawn_sized_with_display_env(directory, width, height, no_color, None)
+    }
+
+    fn spawn_sized_with_display_env(
+        directory: &Path,
+        width: u16,
+        height: u16,
+        no_color: Option<&str>,
+        text_timer: Option<&str>,
+    ) -> Self {
         let flags = OpenptFlags::RDWR | OpenptFlags::NOCTTY | OpenptFlags::CLOEXEC;
         let master = openpt(flags).unwrap();
         unlockpt(&master).unwrap();
@@ -91,6 +101,11 @@ impl Tui {
             command.env("NO_COLOR", value);
         } else {
             command.env_remove("NO_COLOR");
+        }
+        if let Some(value) = text_timer {
+            command.env("POMODORO_TEXT_TIMER", value);
+        } else {
+            command.env_remove("POMODORO_TEXT_TIMER");
         }
         let child = command.spawn().unwrap();
         let mut reader = input.try_clone().unwrap();
@@ -186,6 +201,36 @@ fn paste(tui: &mut Tui, text: &str) {
     tui.send(b"\x1b[200~");
     tui.send(text.as_bytes());
     tui.send(b"\x1b[201~");
+}
+
+#[test]
+fn executable_text_timer_is_opt_in_and_displays_the_live_countdown() {
+    for value in [Some("1"), Some("0"), Some(""), None] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut tui = Tui::spawn_sized_with_display_env(dir.path(), 80, 24, None, value);
+        tui.expect_all(&["Focus · Ready", "Space: Start", "?: Help"]);
+        let screen = tui.screen.screen().contents();
+        if value == Some("1") {
+            assert!(screen.contains("REMAINING / 25:00"), "{screen}");
+            assert!(screen.contains("Elapsed: 0%"), "{screen}");
+            assert!(!screen.contains(['█', '▀', '▄', '▂']), "{screen}");
+            tui.send(b" ");
+            // Any decrease in the first minute proves a live countdown without
+            // requiring the PTY process to observe one particular second.
+            tui.expect_all(&["Focus · Running", "Space: Pause", "REMAINING / 24:"]);
+            assert!(
+                !tui.screen
+                    .screen()
+                    .contents()
+                    .contains(['█', '▀', '▄', '▂'])
+            );
+        } else {
+            assert!(screen.contains('█'), "{screen}");
+            assert!(!screen.contains("REMAINING"), "{screen}");
+        }
+        tui.send(b"q");
+        assert!(tui.finish().success());
+    }
 }
 
 #[test]

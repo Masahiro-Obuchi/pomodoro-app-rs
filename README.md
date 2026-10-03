@@ -72,7 +72,7 @@ POMODORO_STATE_DIR=/tmp/pomodoro-test-state cargo run -p pomodoro-tui
 
 ![Neon Focus running in an 80×24 VTE terminal](docs/assets/neon-focus-implemented.png)
 
-Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick Start choices use amber, and save recovery uses red. State names and operation keys remain visible alongside the colors. A nonempty `NO_COLOR` value disables theme colors through Crossterm's output layer; unset it or use an empty value to enable colors. The clock uses half block characters to leave room between the time, caption, progress bar, task, totals, and controls. Plain horizontal rules separate the sections. Ordinary text uses the terminal's font size; the app cannot set a different point size for each section. Color reproduction, block shapes, and Japanese or emoji glyphs depend on your terminal and font.
+Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick Start choices use amber, and save recovery uses red. State names and operation keys remain visible alongside the colors. A nonempty `NO_COLOR` value disables theme colors through Crossterm's output layer; unset it or use an empty value to enable colors. The clock uses half block characters to leave room between the time, progress bar, task, totals, and controls. Plain horizontal rules separate the sections. Ordinary text uses the terminal's font size; the app cannot set a different point size for each section. Color reproduction, block shapes, and Japanese or emoji glyphs depend on your terminal and font.
 
 | Key | Action |
 | --- | --- |
@@ -88,7 +88,15 @@ Focus and Quick Start use lime, breaks use cyan, interrupted sessions and Quick 
 | `?` | Show or hide help for the current state |
 | `q` | Save and quit |
 
-`REMAINING / 24:59` shows the remaining time, matching the large clock. Press `?` for a labeled help section: the initial screen explains how to start, set a task, and try Quick Start; running and interrupted sessions explain their available operations. Help also shows the full session duration, such as `Session duration: 25:00`. Press `?` again (`Hide help`) to close it. Opening help does not pause the timer. A blank line separates the keys from help and status messages when space permits.
+The large clock shows the remaining time, with blank space before the progress bar. On smaller terminals, `REMAINING / 24:59` replaces the large clock. Press `?` for a labeled help section: the initial screen explains how to start, set a task, and try Quick Start; running and interrupted sessions explain their available operations. Help also shows the full session duration, such as `Session duration: 25:00`. Press `?` again (`Hide help`) to close it. Opening help does not pause the timer. A blank line separates the keys from help and status messages when space permits.
+
+For a countdown in ordinary text at any terminal size, start with `POMODORO_TEXT_TIMER=1`. This replaces the block clock with a single live `REMAINING / 24:59` value and the graphical progress bar with `Elapsed: 0%`. Task, totals, help, and recovery controls keep their usual layout. Only `1` enables this option; unset it or use `0` to keep the large clock. This provides numeric text for terminal assistive tools; behavior with specific screen readers has not been validated.
+
+```bash
+POMODORO_TEXT_TIMER=1 cargo run -p pomodoro-tui
+```
+
+![Ordinary-text countdown in an 80×24 VTE terminal](docs/assets/neon-focus-text-timer.png)
 
 ![Getting started help in an 80×24 VTE terminal](docs/assets/neon-focus-help.png)
 

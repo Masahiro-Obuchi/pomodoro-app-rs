@@ -1,19 +1,19 @@
 use super::*;
 
 #[test]
-fn remaining_caption_and_help_distinguish_remaining_time_from_session_duration() {
+fn remaining_time_uses_one_clock_and_help_shows_session_duration() {
     let mut h = harness(DomainState::new(TimerConfig::default()).unwrap(), 0);
     press(&mut h.app, ' ');
     h.at.set(1_000);
     h.app.tick();
-    for (width, height) in [(80, 24), (24, 17)] {
+    for (width, height, large) in [(80, 24, true), (24, 17, false)] {
         let screen = render(&h.app, width, height);
-        assert!(screen.contains("REMAINING / 24:59"), "{screen}");
+        assert_eq!(screen.contains("REMAINING / 24:59"), !large, "{screen}");
         assert!(!screen.contains("25:00"), "{screen}");
     }
     press(&mut h.app, '?');
     let screen = render(&h.app, 80, 24);
-    assert!(screen.contains("REMAINING / 24:59"), "{screen}");
+    assert!(!screen.contains("REMAINING"), "{screen}");
     assert!(screen.contains("Session duration: 25:00"), "{screen}");
 }
 

@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::{App, InputContext},
+    app::{App, InputContext, TimerDisplay},
     controller::{Clock, CompletionNotifier, SaveStore},
     startup_gate::StartupGate,
     ui_footer::{Footer, controls, count_rows},
@@ -239,30 +239,42 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
 ) -> u16 {
     let stats = summary_lines(app, rest.width);
     let stats_rows = count_rows(stats.clone(), rest.width);
-    // Reserve the caption gaps, footer rule and every footer row first.
+    // Reserve the clock gaps, footer rule and every footer row first.
     // Extra rows separate sections; saved totals take priority during recovery.
     let available = rest.height.saturating_sub(CLOCK_HEIGHT + 7 + footer_rows);
     let show_stats = stats_rows.saturating_add(1) <= available;
     let spare = available.saturating_sub(if show_stats { stats_rows + 1 } else { 0 });
-    if spare > 3 {
-        take(rest, 1);
+    take(rest, 2);
+    let clock = take(rest, CLOCK_HEIGHT);
+    if app.timer_display() == TimerDisplay::Text {
+        frame.render_widget(
+            Paragraph::new(format!("REMAINING / {}", view.time))
+                .alignment(Alignment::Center)
+                .style(Style::new().fg(color))
+                .block(Block::default().padding(Padding::new(0, 0, 1, 0))),
+            clock,
+        );
+    } else {
+        frame.render_widget(
+            BigClock {
+                text: &view.time,
+                style: Style::new().fg(color).bg(ui_theme::BACKGROUND),
+            },
+            clock,
+        );
     }
-    frame.render_widget(
-        BigClock {
-            text: &view.time,
-            style: Style::new().fg(color).bg(ui_theme::BACKGROUND),
-        },
-        take(rest, CLOCK_HEIGHT),
-    );
-    take(rest, 1);
-    frame.render_widget(
-        Paragraph::new(format!("REMAINING / {}", view.time))
-            .alignment(Alignment::Center)
-            .style(Style::new().fg(ui_theme::MUTED)),
-        take(rest, 1),
-    );
-    take(rest, 1);
-    draw_progress(frame, take(rest, 1), view.percent, color);
+    take(rest, 1 + u16::from(spare > 3));
+    let progress = take(rest, 1);
+    if app.timer_display() == TimerDisplay::Text {
+        frame.render_widget(
+            Paragraph::new(format!("Elapsed: {}%", view.percent))
+                .alignment(Alignment::Center)
+                .style(Style::new().fg(ui_theme::MUTED)),
+            progress,
+        );
+    } else {
+        draw_progress(frame, progress, view.percent, color);
+    }
     if spare > 0 {
         take(rest, 1);
     }
