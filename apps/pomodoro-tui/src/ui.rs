@@ -239,7 +239,7 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
 ) -> u16 {
     let stats = summary_lines(app, rest.width);
     let stats_rows = count_rows(stats.clone(), rest.width);
-    // Reserve the caption gaps, footer rule and every footer row first.
+    // Reserve the clock-to-progress gap, footer rule and every footer row first.
     // Extra rows separate sections; saved totals take priority during recovery.
     let available = rest.height.saturating_sub(CLOCK_HEIGHT + 7 + footer_rows);
     let show_stats = stats_rows.saturating_add(1) <= available;
@@ -254,14 +254,7 @@ fn draw_large_body<S: SaveStore, C: Clock, N: CompletionNotifier>(
         },
         take(rest, CLOCK_HEIGHT),
     );
-    take(rest, 1);
-    frame.render_widget(
-        Paragraph::new(format!("REMAINING / {}", view.time))
-            .alignment(Alignment::Center)
-            .style(Style::new().fg(ui_theme::MUTED)),
-        take(rest, 1),
-    );
-    take(rest, 1);
+    take(rest, 3);
     draw_progress(frame, take(rest, 1), view.percent, color);
     if spare > 0 {
         take(rest, 1);

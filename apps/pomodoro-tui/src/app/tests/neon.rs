@@ -84,13 +84,13 @@ fn resizing_restores_the_clock_without_leaving_old_glyphs() {
             large
         );
         let screen = render(&h.app, width, height);
-        assert!(screen.contains("25:00"), "{screen}");
+        assert_eq!(screen.contains("REMAINING / 25:00"), !large, "{screen}");
         assert!(screen.contains("Space: Start"), "{screen}");
     }
 }
 
 #[test]
-fn normal_screen_separates_time_caption_progress_task_totals_and_controls() {
+fn normal_screen_separates_clock_progress_task_totals_and_controls() {
     let mut h = harness(DomainState::new(TimerConfig::default()).unwrap(), 0);
     press(&mut h.app, ' ');
     let rendered = buffer(&h.app, 80, 24);
@@ -106,13 +106,18 @@ fn normal_screen_separates_time_caption_progress_task_totals_and_controls() {
         .iter()
         .rposition(|row| row.contains(['█', '▀', '▄']))
         .unwrap();
-    let caption = find("REMAINING / 25:00");
     let progress = find("▂");
     let task = find("CURRENT TASK");
     let totals = find("Work total");
     let keys = find("Space: Pause");
-    assert!(caption > clock_bottom + 1, "{rows:#?}");
-    assert!(progress > caption + 1, "{rows:#?}");
+    assert!(!rows.iter().any(|row| row.contains("REMAINING")));
+    assert!(progress > clock_bottom + 1, "{rows:#?}");
+    assert!(
+        rows[clock_bottom + 1..progress]
+            .iter()
+            .all(|row| row.trim_matches(['│', ' ']).is_empty()),
+        "{rows:#?}"
+    );
     assert!(task > progress + 1, "{rows:#?}");
     for heading in [totals, keys] {
         assert!(rows[heading - 1].contains("─"), "{rows:#?}");
@@ -143,9 +148,16 @@ fn maximum_duration_and_unicode_task_fit_without_losing_digits_or_graphemes() {
         )
         .unwrap();
     let h = harness(domain, 0);
-    for (width, height) in [(100, 30), (80, 24), (60, 24), (30, 25), (24, 17)] {
+    for (width, height, large) in [
+        (100, 30, true),
+        (80, 24, true),
+        (60, 24, true),
+        (30, 25, false),
+        (24, 17, false),
+    ] {
         let screen = render(&h.app, width, height);
-        assert!(screen.contains("1440:00"), "{screen}");
+        assert_eq!(screen.contains('█'), large, "{screen}");
+        assert_eq!(screen.contains("1440:00"), !large, "{screen}");
         assert!(screen.contains("Space: Start"), "{screen}");
         assert!(!screen.contains('�'), "{screen}");
     }
