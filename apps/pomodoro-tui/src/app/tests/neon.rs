@@ -111,7 +111,7 @@ fn normal_screen_separates_clock_progress_task_totals_and_controls() {
     let totals = find("Work total");
     let keys = find("Space: Pause");
     assert!(!rows.iter().any(|row| row.contains("REMAINING")));
-    assert!(progress > clock_bottom + 1, "{rows:#?}");
+    assert_eq!(progress, clock_bottom + 2, "{rows:#?}");
     assert!(
         rows[clock_bottom + 1..progress]
             .iter()
